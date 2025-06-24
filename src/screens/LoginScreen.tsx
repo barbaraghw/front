@@ -9,13 +9,15 @@ import {
   Image
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+import { RootStackParamList, BottomTabParamList } from '../../App';
 import axios from 'axios';
 import type { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LoginResponse, ErrorResponse } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+
+
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
 
@@ -27,8 +29,10 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const response = await axios.post<LoginResponse>(`${API_URL}/auth/login`, { email, password });
       await AsyncStorage.setItem('userToken', response.data.token);
-      Alert.alert('Éxito', '¡Inicio de sesión exitoso!');
-      navigation.navigate('Account');
+       Alert.alert('Éxito', '¡Inicio de sesión exitoso!');
+      navigation.navigate('MainTabs', {
+        screen: 'Account', 
+      }); 
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
       Alert.alert(

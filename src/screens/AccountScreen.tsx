@@ -10,11 +10,16 @@ import {
   Modal, // Importar Modal
   Pressable // Importar Pressable para el modal
 } from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { NativeStackScreenProps } from '@react-navigation/native-stack'; // Necesitas este también para RootStackParamList
+
+import { RootStackParamList, BottomTabParamList } from '../../App'; 
 import axios from 'axios';
-import type { AxiosError } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import type { AxiosError } from 'axios';
 import { ErrorResponse } from '../types/api';
 
 type UserProfile = {
@@ -22,7 +27,10 @@ type UserProfile = {
   email: string;
 };
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Account'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<BottomTabParamList, 'Account'>, // Las props de esta pantalla dentro del Bottom Tab
+  NativeStackScreenProps<RootStackParamList>            // Y las props del Navigator padre (RootStack)
+>;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
 
