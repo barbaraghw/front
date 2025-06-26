@@ -1,116 +1,137 @@
+// App.tsx
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'; // Importar Bottom Tab
-import { Ionicons } from '@expo/vector-icons'; 
-import { ActivityIndicator, View, Text } from 'react-native'; 
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, View, Text } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-import MovieListScreen from './src/screens/MovieListScreen'; 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// --- VERIFY THESE IMPORTS ---
+// Your MovieListScreen is now your "Home" equivalent
+import MovieListScreen from './src/screens/MovieListScreen';
+import MovieDetailScreen from './src/screens/MovieDetailScreen';
+import SearchScreen from './src/screens/SearchScreen';
 import AccountScreen from './src/screens/AccountScreen';
+// ----------------------------
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type RootStackParamList = {
-  Login: undefined;
-  Register: undefined;
-  MainTabs: {
-    screen?: keyof BottomTabParamList; // Opcional, para especificar la pestaña inicial
-    params?: BottomTabParamList[keyof BottomTabParamList]; // Opcional, para pasar parámetros a la pestaña
-  } | undefined; // Permite que MainTabs también pueda ser llamado sin parámetros
+    Login: undefined;
+    Register: undefined;
+    MainTabs: {
+        screen?: keyof BottomTabParamList;
+        params?: BottomTabParamList[keyof BottomTabParamList];
+    } | undefined;
+    MovieDetail: { movieId: string; movieTitle: string };
+    SearchScreen: undefined;
+    // --- CAMBIO: Actualizar el tipo para MovieList ---
+    MovieList: { type?: 'latest' | 'popular' | 'category' | 'genre' | 'all'; category?: string; genreId?: number; sortBy?: 'release_date' | 'vote_average' | 'title'; sortOrder?: 'desc' | 'asc' };
+    // --- FIN CAMBIO ---
 };
-
 export type BottomTabParamList = {
-  Movies: undefined; // Pestaña de películas
-  Account: undefined; // Pestaña de cuenta
+    // ONLY ONE PRIMARY MOVIE TAB: 'Movies'
+    Movies: undefined; // This tab will render your MovieListScreen (your Home equivalent)
+    Account: undefined; // Pestaña de cuenta
+    // Add any other tabs here
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<BottomTabParamList>();
-function MainTabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap; // Variable declaration
 
-          if (route.name === 'Movies') {
-            iconName = focused ? 'film' : 'film-outline';
-          } else if (route.name === 'Account') {
-            iconName = focused ? 'person' : 'person-outline';
-          } else {
-            iconName = 'help-circle-outline'; // A default icon, e.g., question mark
-          }
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#1E3A8A', // Color de pestaña activa
-        tabBarInactiveTintColor: 'gray', // Color de pestaña inactiva
-        tabBarStyle: {
-          backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: '#eee',
-          paddingBottom: 5,
-          height: 60, // Altura de la barra
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-        }
-      })}
-    >
-      <Tab.Screen name="Movies" component={MovieListScreen} options={{ title: 'Películas' }} />
-      <Tab.Screen name="Account" component={AccountScreen} options={{ title: 'Cuenta' }} />
-    </Tab.Navigator>
-  );
+function MainTabs() {
+    return (
+        <Tab.Navigator
+            screenOptions={({ route }) => ({
+                headerShown: false,
+                tabBarIcon: ({ focused, color, size }) => {
+                    let iconName: keyof typeof Ionicons.glyphMap;
+
+                    if (route.name === 'Movies') { // This is your primary movie tab
+                        iconName = focused ? 'film' : 'film-outline'; // Or 'home' if you prefer a home icon for your main movie list
+                    } else if (route.name === 'Account') {
+                        iconName = focused ? 'person' : 'person-outline';
+                    } else {
+                        iconName = 'help-circle-outline';
+                    }
+                    return <Ionicons name={iconName} size={size} color={color} />;
+                },
+                tabBarActiveTintColor: '#E50914',
+                tabBarInactiveTintColor: '#A0A0A0',
+                tabBarStyle: {
+                    backgroundColor: '#1C1C1C',
+                    borderTopWidth: 0,
+                    paddingBottom: 5,
+                    height: 60,
+                },
+                tabBarLabelStyle: {
+                    fontSize: 12,
+                }
+            })}
+        >
+            {/* Your MovieListScreen is now assigned to the 'Movies' tab */}
+            <Tab.Screen name="Movies" component={MovieListScreen} options={{ title: 'Películas' }} />
+            <Tab.Screen name="Account" component={AccountScreen} options={{ title: 'Cuenta' }} />
+        </Tab.Navigator>
+    );
 }
 
-// =========================================================
-// Componente principal de la aplicación
-// =========================================================
 const App = () => {
-  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Login');
-  const [isLoading, setIsLoading] = useState(true);
+    const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Login');
+    const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const checkToken = async () => {
-      try {
-        const userToken = await AsyncStorage.getItem('userToken');
-        if (userToken) {
-          // Si hay token, navegamos a las pestañas principales
-          setInitialRoute('MainTabs');
-        } else {
-          // Si no hay token, a la pantalla de Login
-          setInitialRoute('Login');
-        }
-      } catch (e) {
-        console.error('Tu sesion ha expirado', e);
-        setInitialRoute('Login'); // En caso de error, ir a Login
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkToken();
-  }, []);
+    useEffect(() => {
+        const checkToken = async () => {
+            try {
+                const userToken = await AsyncStorage.getItem('userToken');
+                if (userToken) {
+                    setInitialRoute('MainTabs');
+                } else {
+                    setInitialRoute('Login');
+                }
+            } catch (e) {
+                console.error('Error checking token or session expired:', e);
+                setInitialRoute('Login');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        checkToken();
+    }, []);
 
-  if (isLoading) {
-    // Puedes renderizar una pantalla de carga aquí
+    if (isLoading) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0A0A0A' }}>
+                <ActivityIndicator size="large" color="#E50914" />
+                <Text style={{ color: '#FFF', marginTop: 10 }}>Cargando...</Text>
+            </View>
+        );
+    }
+
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#1E3A8A" />
-      </View>
-    );
-  }
+        <NavigationContainer>
+            <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Login" component={LoginScreen} />
+                <Stack.Screen name="Register" component={RegisterScreen} />
 
-  return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
-        {/* Pantallas que no están dentro de las pestañas */}
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        {/* La pantalla que contiene el Bottom Tab Navigator */}
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+                {/* The screen that contains the Bottom Tab Navigator */}
+                <Stack.Screen name="MainTabs" component={MainTabs} />
+
+                {/* MovieDetail and SearchScreen are still in the RootStack */}
+                <Stack.Screen name="MovieDetail" component={MovieDetailScreen} />
+                <Stack.Screen name="SearchScreen" component={SearchScreen} />
+                {/* MovieList IS your MovieListScreen component. It's added here
+                    so that you can navigate to it with specific parameters
+                    from "See all" buttons on your tab, allowing it to potentially
+                    display a filtered list or show its original filter UI if desired.
+                    This MovieList route is separate from the 'Movies' tab.
+                */}
+                <Stack.Screen name="MovieList" component={MovieListScreen} />
+            </Stack.Navigator>
+        </NavigationContainer>
+    );
 };
 
 export default App;

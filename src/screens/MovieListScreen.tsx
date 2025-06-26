@@ -1,508 +1,544 @@
 // src/screens/MovieListScreen.tsx
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  View,
-  Text,
-  FlatList,
-  ActivityIndicator,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-  RefreshControl,
-  SafeAreaView,
-  Image
+    View,
+    Text,
+    FlatList,
+    ActivityIndicator,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    Alert,
+    ScrollView,
+    RefreshControl,
+    SafeAreaView,
+    Image,
+    Dimensions
 } from 'react-native';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs'; 
-import { RootStackParamList, BottomTabParamList } from '../../App'; 
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList, BottomTabParamList } from '../../App';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
+import { useFocusEffect } from '@react-navigation/native'; 
 
 interface Movie {
-  _id: string;
-  title: string;
-  overview: string;
-  release_date: string; // La recibimos como string y la formateamos
-  vote_average: number;
-  poster_path: string;
-  backdrop_path?: string;
-  genres: number[]; // Mantendremos IDs de género por ahora
+    _id: string;
+    title: string;
+    overview: string;
+    release_date: string;
+    vote_average: number;
+    poster_path: string;
+    backdrop_path?: string;
+    genres: number[];
+    runtime?: number;
 }
 
-type Props = BottomTabScreenProps<BottomTabParamList, 'Movies'>;
+interface IAuthenticatedUser {
+    _id: string;
+    username: string;
+    email: string;
+}
+
+type MovieListTabProps = CompositeScreenProps<
+    BottomTabScreenProps<BottomTabParamList, 'Movies'>,
+    NativeStackScreenProps<RootStackParamList>
+>;
+
+type MovieListStackProps = NativeStackScreenProps<RootStackParamList, 'MovieList'>;
+
+type MovieListScreenProps = MovieListTabProps | MovieListStackProps;
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const windowWidth = Dimensions.get('window').width;
+const numColumns = 2;
+const cardMargin = 15;
+const cardWidth = (windowWidth - (numColumns + 1) * cardMargin) / numColumns;
 
-const MovieListScreen: React.FC<Props> = ({ navigation }) => { 
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) => {
+    const rootStackNavigation = navigation as NativeStackNavigationProp<RootStackParamList>;
+const [userName, setUserName] = useState<string | null>(null);
+    const [latestMovies, setLatestMovies] = useState<Movie[]>([]);
 
-  // Estados para filtros y ordenamiento
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null); // Puedes tener múltiples
-  const [minRating, setMinRating] = useState('');
-  const [startYear, setStartYear] = useState('');
-  const [endYear, setEndYear] = useState('');
-  const [sortBy, setSortBy] = useState<'release_date' | 'vote_average' | 'title'>('release_date');
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+    // --- CAMBIO: Reemplazar 'upcoming' por 'popular' ---
+    const [popularMovies, setPopularMovies] = useState<Movie[]>([]); // Nuevo estado para películas populares
+    const [loadingLatest, setLoadingLatest] = useState(true);
+    const [loadingPopular, setLoadingPopular] = useState(true); // Nuevo estado de carga para populares
+    // --- FIN CAMBIO ---
 
-  // Géneros de TMDB (puedes importarlos de una API de TMDB o hardcodearlos)
-  // Para filtrar por nombre de género, necesitarías el ID de TMDB.
-  const genres = [
-    { id: 28, name: 'Acción' },
-    { id: 12, name: 'Aventura' },
-    { id: 16, name: 'Animación' },
-    { id: 35, name: 'Comedia' },
-    { id: 80, name: 'Crimen' },
-    { id: 99, name: 'Documental' },
-    { id: 18, name: 'Drama' },
-    { id: 10751, name: 'Familia' },
-    { id: 14, name: 'Fantasía' },
-    { id: 36, name: 'Historia' },
-    { id: 27, name: 'Terror' },
-    { id: 10402, name: 'Música' },
-    { id: 9648, name: 'Misterio' },
-    { id: 10749, name: 'Romance' },
-    { id: 878, name: 'Ciencia ficción' },
-    { id: 10770, name: 'Película de TV' },
-    { id: 53, name: 'Thriller' },
-    { id: 10752, name: 'Bélica' },
-    { id: 37, name: 'Western' },
-  ];
+    const [refreshing, setRefreshing] = useState(false);
 
-  const fetchMovies = useCallback(async (refresh = false) => {
-    if (!refresh) setLoading(true);
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        // Redirigir a login si no hay token (manejar en RootStackParamList)
-        // navigation.navigate('Login'); // No directamente desde BottomTab
-        Alert.alert('Error', 'No hay token de autenticación. Por favor, inicia sesión.');
-        return;
-      }
+    // Keep these if they are used elsewhere for general filtering/sorting UI
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+    const [minRating, setMinRating] = useState('');
+    const [startYear, setStartYear] = useState('');
+    const [endYear, setEndYear] = useState('');
+    const [sortBy, setSortBy] = useState<'release_date' | 'vote_average' | 'title'>('release_date');
+    const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
-      const params: any = {};
-      if (searchQuery) params.search = searchQuery;
-      if (selectedGenreId) params.genreId = selectedGenreId;
-      if (minRating) params.minRating = minRating;
-      if (startYear) params.startYear = startYear;
-      if (endYear) params.endYear = endYear;
+    const [selectedCategory, setSelectedCategory] = useState('All');
 
-      params.sortBy = sortBy;
-      params.order = sortOrder;
 
-      const response = await axios.get<Movie[]>(`${API_URL}/movies`, {
-        headers: { Authorization: `Bearer ${token}` },
-        params,
-      });
-      setMovies(response.data);
-    } catch (error) {
-      const axiosError = error as any; // Usar 'any' para errores genéricos de Axios
-      Alert.alert('Error', axiosError.response?.data?.message || 'Error al cargar películas.');
-      console.error('Error al cargar películas:', axiosError.response?.data || axiosError.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    // Make sure your genres array does NOT have duplicates (as per previous fix)
+    const genres = [
+        { id: 28, name: 'Action' }, { id: 12, name: 'Adventure' }, { id: 16, name: 'Animation' },
+        { id: 35, name: 'Comedy' }, { id: 80, name: 'Crime' }, { id: 18, name: 'Drama' },
+        { id: 878, name: 'Science Fiction' },
+        { id: 53, name: 'Thriller' },
+        { id: 27, name: 'Horror' },
+        { id: 99, name: 'Documentary' }, { id: 10751, name: 'Family' }, { id: 14, name: 'Fantasy' },
+        { id: 36, name: 'History' }, { id: 10402, name: 'Music' }, { id: 9648, name: 'Mystery' },
+        { id: 10749, name: 'Romance' },
+        { id: 10770, name: 'TV Movie' },
+        { id: 10752, name: 'War' }, { id: 37, name: 'Western' }
+    ];
+    const categories = ['All', ...genres.map(g => g.name)];
+
+    const userAvatar = require('../../assets/user_avatar.png');
+
+  const fetchAndSetUserName = async () => {
+        try {
+            const storedName = await AsyncStorage.getItem('userName');
+            if (storedName) {
+                console.log('Fetched userName:', storedName); // This log confirms it's retrieved
+                setUserName(storedName); // <--- Make sure this line exists and is called
+            } else {
+                console.log('Fetched userName: null');
+                setUserName(null); // Clear if not found
+            }
+        } catch (error) {
+            console.error('Error fetching username from AsyncStorage:', error);
+            setUserName(null);
+        }
     }
-  }, [searchQuery, selectedGenreId, minRating, startYear, endYear, sortBy, sortOrder]);
 
-  useEffect(() => {
-    fetchMovies();
-  }, [fetchMovies]);
+    const fetchMoviesSection = useCallback(async (
+        type: 'latest' | 'popular' | 'category' | 'genre' | 'all', // Updated type parameter
+        setter: React.Dispatch<React.SetStateAction<Movie[]>>,
+        setLoading: React.Dispatch<React.SetStateAction<boolean>>,
+        currentGenreId: number | null = null
+    ) => {
+        setLoading(true);
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) {
+                Alert.alert('Error', 'No hay token de autenticación. Por favor, inicia sesión.');
+                rootStackNavigation.navigate('Login');
+                return;
+            }
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchMovies(true);
-  }, [fetchMovies]);
+            const params: any = {};
+            
+            if (type === 'latest') {
+                params.type = 'latest';
+                params.sortBy = 'release_date';
+                params.order = 'desc';
+            } else if (type === 'popular') {
+                params.type = 'popular';
+                // Backend handles sorting for 'popular', no need for sortBy/order here
+            } else if (type === 'category' || type === 'genre') {
+                if (currentGenreId) {
+                    params.genreId = currentGenreId;
+                }
+                params.sortBy = 'release_date'; // Default sort for category/genre
+                params.order = 'desc';
+            } else { // 'all' or default
+                params.sortBy = 'release_date';
+                params.order = 'desc';
+            }
+            
+            const response = await axios.get<Movie[]>(`${API_URL}/movies`, {
+                headers: { Authorization: `Bearer ${token}` },
+                params,
+            });
+            setter(response.data);
+        } catch (error) {
+            const axiosError = error as any;
+            Alert.alert('Error', axiosError.response?.data?.message || `Error al cargar películas de tipo ${type}.`);
+            console.error(`Error al cargar películas de tipo ${type}:`, axiosError.response?.data || axiosError.message);
+            setter([]);
+        } finally {
+            setLoading(false);
+        }
+      }, [rootStackNavigation]);
+ useFocusEffect(
+        React.useCallback(() => {
+            fetchAndSetUserName();
+            // You can return a cleanup function if needed
+            return () => {
+                // Optional: cleanup logic
+            };
+        }, []) // The empty dependency array ensures it only runs once per focus
+    );
+      useFocusEffect(
+        useCallback(() => {// **ESSENTIAL**: Fetch username on screen focus
+            // Determine which movies to fetch based on the current route
+            if ('name' in route && route.name === 'MovieList' && route.params) {
+                const currentRouteParams = route.params as RootStackParamList['MovieList'];
+                if (currentRouteParams.type === 'latest') {
+                    fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
+                } else if (currentRouteParams.type === 'popular') {
+                    fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
+                } else if (currentRouteParams.type === 'category' || currentRouteParams.type === 'genre') {
+                    const genreId = currentRouteParams.genreId || (currentRouteParams.category ? genres.find(g => g.name === currentRouteParams.category)?.id : null);
+                    fetchMoviesSection('category', setLatestMovies, setLoadingLatest, genreId);
+                } else {
+                    fetchMoviesSection('all', setLatestMovies, setLoadingLatest);
+                }
+                // Clear other lists if in a specific list view
+                if (currentRouteParams.type !== 'latest') setLatestMovies([]);
+                if (currentRouteParams.type !== 'popular') setPopularMovies([]);
+            } else if ('name' in route && route.name === 'Movies') { // This is the main tab screen
+                fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
+                fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
+            }
+        }, [route, fetchMoviesSection]) // Dependencies for useFocusEffect
+    ); // fetchUserData es ahora una dependencia estable
 
-  const handleClearFilters = () => {
-    setSearchQuery('');
-    setSelectedGenreId(null);
-    setMinRating('');
-    setStartYear('');
-    setEndYear('');
-    setSortBy('release_date');
-    setSortOrder('desc');
-  };
+     const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        // Re-fetch all relevant data
+        Promise.all([
+            fetchAndSetUserName(), // Refresh username
+            // Logic to re-fetch based on current route
+            (() => {
+                if ('name' in route && route.name === 'MovieList' && route.params) {
+                    const currentRouteParams = route.params as RootStackParamList['MovieList'];
+                    if (currentRouteParams.type === 'latest') {
+                        return fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
+                    } else if (currentRouteParams.type === 'popular') {
+                        return fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
+                    } else if (currentRouteParams.type === 'category' || currentRouteParams.type === 'genre') {
+                        const genreId = currentRouteParams.genreId || (currentRouteParams.category ? genres.find(g => g.name === currentRouteParams.category)?.id : null);
+                        return fetchMoviesSection('category', setLatestMovies, setLoadingLatest, genreId);
+                    } else {
+                        return fetchMoviesSection('all', setLatestMovies, setLoadingLatest);
+                    }
+                } else {
+                    return Promise.all([
+                        fetchMoviesSection('latest', setLatestMovies, setLoadingLatest),
+                        fetchMoviesSection('popular', setPopularMovies, setLoadingPopular),
+                    ]);
+                }
+            })(),
+        ]).finally(() => setRefreshing(false));
+    }, [fetchAndSetUserName, fetchMoviesSection, route]);
 
-  const renderMovieItem = ({ item }: { item: Movie }) => (
-    <View style={styles.movieItem}>
-      <View style={styles.posterContainer}>
-        {item.poster_path ? (
-          <Image source={{ uri: item.poster_path }} style={styles.poster} />
-        ) : (
-          <View style={styles.noPoster}>
-            <Text style={styles.noPosterText}>No Poster</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.movieDetails}>
-        <Text style={styles.movieTitle}>{item.title}</Text>
-        <Text style={styles.movieInfo}>
-          Puntuación: {item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}
-        </Text>
-        <Text style={styles.movieInfo}>
-          Lanzamiento: {item.release_date ? new Date(item.release_date).getFullYear() : 'N/A'}
-        </Text>
-        <Text style={styles.movieInfo}>
-            Géneros: {item.genres.map(id => genres.find(g => g.id === id)?.name || 'Desconocido').join(', ')}
-        </Text>
-        <Text style={styles.movieOverview} numberOfLines={3}>{item.overview}</Text>
-      </View>
-    </View>
-  );
+// fetchUserData es ahora una dependencia estable
 
-  return (
-    <SafeAreaView style={styles.fullContainer}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Películas</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.filtersContainer}>
-        <TextInput
-          style={styles.filterInput}
-          placeholder="Buscar por título..."
-          placeholderTextColor="#888"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-
-        <View style={styles.pickerContainer}>
-          <Text style={styles.pickerLabel}>Género:</Text>
-          <ScrollView horizontal style={styles.genreScroll} showsHorizontalScrollIndicator={false}>
-            <TouchableOpacity
-                style={[styles.genreButton, selectedGenreId === null && styles.genreButtonSelected]}
-                onPress={() => setSelectedGenreId(null)}
-            >
-                <Text style={[styles.genreButtonText, selectedGenreId === null && styles.genreButtonTextSelected]}>Todos</Text>
-            </TouchableOpacity>
-            {genres.map(genre => (
-                <TouchableOpacity
-                    key={genre.id}
-                    style={[styles.genreButton, selectedGenreId === genre.id && styles.genreButtonSelected]}
-                    onPress={() => setSelectedGenreId(genre.id)}
-                >
-                    <Text style={[styles.genreButtonText, selectedGenreId === genre.id && styles.genreButtonTextSelected]}>{genre.name}</Text>
-                </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        <TextInput
-          style={styles.filterInput}
-          placeholder="Puntuación mínima (ej. 7.5)"
-          placeholderTextColor="#888"
-          keyboardType="numeric"
-          value={minRating}
-          onChangeText={setMinRating}
-        />
-        <View style={styles.yearInputsContainer}>
-          <TextInput
-            style={[styles.filterInput, styles.yearInput]}
-            placeholder="Año inicio (ej. 2000)"
-            placeholderTextColor="#888"
-            keyboardType="numeric"
-            maxLength={4}
-            value={startYear}
-            onChangeText={setStartYear}
-          />
-          <TextInput
-            style={[styles.filterInput, styles.yearInput]}
-            placeholder="Año fin (ej. 2023)"
-            placeholderTextColor="#888"
-            keyboardType="numeric"
-            maxLength={4}
-            value={endYear}
-            onChangeText={setEndYear}
-          />
-        </View>
-
-        <View style={styles.sortingContainer}>
-          <Text style={styles.pickerLabel}>Ordenar por:</Text>
-          <View style={styles.sortButtons}>
-            <TouchableOpacity
-              style={[styles.sortButton, sortBy === 'release_date' && styles.sortButtonSelected]}
-              onPress={() => setSortBy('release_date')}
-            >
-              <Text style={[styles.sortButtonText, sortBy === 'release_date' && styles.sortButtonTextSelected]}>Fecha</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.sortButton, sortBy === 'vote_average' && styles.sortButtonSelected]}
-              onPress={() => setSortBy('vote_average')}
-            >
-              <Text style={[styles.sortButtonText, sortBy === 'vote_average' && styles.sortButtonTextSelected]}>Puntuación</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.sortButton, sortBy === 'title' && styles.sortButtonSelected]}
-              onPress={() => setSortBy('title')}
-            >
-              <Text style={[styles.sortButtonText, sortBy === 'title' && styles.sortButtonTextSelected]}>Título</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.sortOrderButtons}>
-            <TouchableOpacity
-              style={[styles.sortOrderButton, sortOrder === 'desc' && styles.sortOrderButtonSelected]}
-              onPress={() => setSortOrder('desc')}
-            >
-              <Ionicons name="arrow-down" size={20} color={sortOrder === 'desc' ? '#fff' : '#1E3A8A'} />
-              <Text style={[styles.sortOrderButtonText, sortOrder === 'desc' && styles.sortOrderButtonTextSelected]}>Desc</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.sortOrderButton, sortOrder === 'asc' && styles.sortOrderButtonSelected]}
-              onPress={() => setSortOrder('asc')}
-            >
-              <Ionicons name="arrow-up" size={20} color={sortOrder === 'asc' ? '#fff' : '#1E3A8A'} />
-              <Text style={[styles.sortOrderButtonText, sortOrder === 'asc' && styles.sortOrderButtonTextSelected]}>Asc</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity style={styles.clearFiltersButton} onPress={handleClearFilters}>
-          <Text style={styles.clearFiltersButtonText}>Limpiar Filtros</Text>
+    const renderMovieCard = ({ item }: { item: Movie }) => (
+        <TouchableOpacity
+            style={
+                'name' in route && route.name === 'MovieList'
+                    ? [styles.movieCardVertical, { width: cardWidth }]
+                    : styles.movieCardHorizontal
+            }
+            onPress={() => rootStackNavigation.navigate('MovieDetail', { movieId: item._id, movieTitle: item.title })}
+        >
+            <Image
+                source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
+                style={styles.moviePoster}
+                resizeMode="cover"
+            />
+            <Text style={styles.movieTitleCard} numberOfLines={2}>{item.title}</Text>
+            {item.runtime ? (
+                <Text style={styles.movieInfoCard}>{`${Math.floor(item.runtime / 60)}h ${item.runtime % 60}m`}</Text>
+            ) : item.release_date ? (
+                <Text style={styles.movieInfoCard}>{new Date(item.release_date).getFullYear()}</Text>
+            ) : null}
         </TouchableOpacity>
+    );
 
-      </ScrollView>
+    const isSeeAllView = 'name' in route && route.name === 'MovieList';
+    // --- CAMBIO: Determinar qué lista mostrar en "See all" ---
+    const moviesToDisplayForSeeAll = isSeeAllView ? (
+        route.params?.type === 'latest' ? latestMovies :
+        route.params?.type === 'popular' ? popularMovies :
+        latestMovies // Default fallback if type is unknown or 'all'
+    ) : [];
+    // --- FIN CAMBIO ---
 
-      {loading && movies.length === 0 ? (
-        <ActivityIndicator size="large" color="#1E3A8A" style={styles.loadingIndicator} />
-      ) : (
-        <FlatList
-          data={movies}
-          renderItem={renderMovieItem}
-          keyExtractor={(item) => item._id}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={!loading ? <Text style={styles.emptyListText}>No se encontraron películas.</Text> : null}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#1E3A8A']} />
-          }
-        />
-      )}
-    </SafeAreaView>
-  );
+    return (
+        <SafeAreaView style={styles.fullContainer}>
+            <ScrollView
+                style={styles.container}
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#FFF" />
+                }
+            >
+                {!isSeeAllView && (
+                    <>
+                        <View style={styles.header}>
+                            <View style={styles.userInfo}>
+                                <Image source={userAvatar} style={styles.avatar} />
+                                <View>
+                                    <Text style={styles.welcomeText}>Welcome back,</Text>
+                                    <Text style={styles.userName}>
+                                      {userName || 'Guest'} {/* <--- CHANGE THIS LINE */}
+                                  </Text>
+                                </View>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.searchIconContainer}
+                                onPress={() => rootStackNavigation.navigate('SearchScreen')}
+                            >
+                                <FontAwesome5 name="search" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.discoverTitle}>Discover Your Next{"\n"}Favorite Movie.</Text>
+
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryFilterContainer} contentContainerStyle={styles.categoryFilterContent}>
+                            {categories.map((categoryName) => (
+                                <TouchableOpacity
+                                    key={categoryName}
+                                    style={[
+                                        styles.categoryButton,
+                                        selectedCategory === categoryName && styles.selectedCategoryButton,
+                                    ]}
+                                    onPress={() => setSelectedCategory(categoryName)}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.categoryButtonText,
+                                            selectedCategory === categoryName && styles.selectedCategoryButtonText,
+                                        ]}
+                                    >
+                                        {categoryName}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </>
+                )}
+
+                {isSeeAllView ? (
+                    // --- CAMBIO: Check loading states for both latest and popular ---
+                    loadingLatest || loadingPopular ? (
+                        <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                    ) : (
+                    // --- FIN CAMBIO ---
+                        <FlatList
+                            data={moviesToDisplayForSeeAll.length > 0 ? moviesToDisplayForSeeAll : latestMovies} // Default if no specific type
+                            renderItem={renderMovieCard}
+                            keyExtractor={(item) => item._id}
+                            contentContainerStyle={styles.movieListVerticalContent}
+                            ListEmptyComponent={<Text style={styles.emptyListText}>No se encontraron películas.</Text>}
+                            numColumns={numColumns}
+                            columnWrapperStyle={styles.row}
+                        />
+                    )
+                ) : (
+                    <>
+                        {/* Latest Movies Section (unchanged) */}
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Latest movies</Text>
+                            <TouchableOpacity onPress={() =>
+                                rootStackNavigation.navigate('MovieList', { type: 'latest', sortBy: 'release_date', sortOrder: 'desc' })
+                            }>
+                                <Text style={styles.seeAllText}>See all</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {loadingLatest ? (
+                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                        ) : (
+                            <FlatList
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                data={latestMovies}
+                                renderItem={renderMovieCard}
+                                keyExtractor={(item) => item._id}
+                                contentContainerStyle={styles.movieListHorizontalContent}
+                                ListEmptyComponent={<Text style={styles.emptyListText}>No se encontraron películas recientes.</Text>}
+                            />
+                        )}
+
+                        {/* --- CAMBIO: Popular Movies Section (previously Upcoming) --- */}
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Popular movies</Text> {/* Updated title */}
+                            <TouchableOpacity onPress={() =>
+                                rootStackNavigation.navigate('MovieList', { type: 'popular' }) // Navigate with 'popular' type
+                            }>
+                                <Text style={styles.seeAllText}>See all</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {loadingPopular ? ( // Use loadingPopular state
+                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                        ) : (
+                            <FlatList
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                data={popularMovies} // Use popularMovies data
+                                renderItem={renderMovieCard}
+                                keyExtractor={(item) => item._id}
+                                contentContainerStyle={styles.movieListHorizontalContent}
+                                ListEmptyComponent={<Text style={styles.emptyListText}>No se encontraron películas populares.</Text>}
+                            />
+                        )}
+                        {/* --- FIN CAMBIO --- */}
+                    </>
+                )}
+            </ScrollView>
+        </SafeAreaView>
+    );
 };
 
 const styles = StyleSheet.create({
-  fullContainer: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-  },
-  header: {
-    paddingTop: 50,
-    paddingBottom: 15,
-    backgroundColor: '#1E3A8A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 3,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  filtersContainer: {
-    padding: 15,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    marginBottom: 10,
-  },
-  filterInput: {
-    height: 45,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    marginBottom: 10,
-    fontSize: 16,
-    color: '#333',
-  },
-  pickerContainer: {
-    marginBottom: 10,
-  },
-  pickerLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#333',
-  },
-  genreScroll: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  genreButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#1E3A8A',
-    marginRight: 10,
-    backgroundColor: '#fff',
-  },
-  genreButtonSelected: {
-    backgroundColor: '#1E3A8A',
-  },
-  genreButtonText: {
-    color: '#1E3A8A',
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  genreButtonTextSelected: {
-    color: '#fff',
-  },
-  yearInputsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  yearInput: {
-    width: '48%',
-  },
-  sortingContainer: {
-    marginBottom: 10,
-  },
-  sortButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  sortButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#1E3A8A',
-    borderRadius: 8,
-    marginHorizontal: 5,
-    alignItems: 'center',
-  },
-  sortButtonSelected: {
-    backgroundColor: '#1E3A8A',
-  },
-  sortButtonText: {
-    color: '#1E3A8A',
-    fontWeight: 'bold',
-  },
-  sortButtonTextSelected: {
-    color: '#fff',
-  },
-  sortOrderButtons: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 5,
-  },
-  sortOrderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#1E3A8A',
-    borderRadius: 20,
-    marginHorizontal: 5,
-    backgroundColor: '#fff',
-  },
-  sortOrderButtonSelected: {
-    backgroundColor: '#1E3A8A',
-  },
-  sortOrderButtonText: {
-    color: '#1E3A8A',
-    marginLeft: 5,
-    fontWeight: 'bold',
-  },
-  sortOrderButtonTextSelected: {
-    color: '#fff',
-  },
-  clearFiltersButton: {
-    backgroundColor: '#6B7280',
-    paddingVertical: 12,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  clearFiltersButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  listContent: {
-    paddingBottom: 20, // Espacio al final para evitar que la última película quede oculta por la navegación inferior
-    paddingHorizontal: 10,
-  },
-  movieItem: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-    overflow: 'hidden',
-  },
-  posterContainer: {
-    width: 100,
-    height: 150,
-    backgroundColor: '#e0e0e0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-    overflow: 'hidden',
-  },
-  poster: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  noPoster: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  noPosterText: {
-    color: '#888',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  movieDetails: {
-    flex: 1,
-    padding: 10,
-  },
-  movieTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  movieInfo: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 3,
-  },
-  movieOverview: {
-    fontSize: 13,
-    color: '#666',
-    marginTop: 5,
-  },
-  loadingIndicator: {
-    marginTop: 50,
-  },
-  emptyListText: {
-    textAlign: 'center',
-    marginTop: 50,
-    fontSize: 18,
-    color: '#888',
-  },
+    fullContainer: {
+        flex: 1,
+        backgroundColor: '#0A0A0A',
+    },
+    container: {
+        flex: 1,
+        backgroundColor: '#0A0A0A',
+        paddingHorizontal: 20,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 20,
+    },
+    userInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    avatar: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        marginRight: 10,
+        backgroundColor: '#333',
+    },
+    welcomeText: {
+        color: '#A0A0A0',
+        fontSize: 14,
+    },
+    userName: {
+        color: '#FFF',
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+    searchIconContainer: {
+        padding: 8,
+    },
+    discoverTitle: {
+        color: '#FFF',
+        fontSize: 32,
+        fontWeight: 'bold',
+        marginBottom: 30,
+        lineHeight: 40,
+    },
+    categoryFilterContainer: {
+        marginBottom: 25,
+    },
+    categoryFilterContent: {
+        alignItems: 'center',
+        paddingRight: 10,
+    },
+    categoryButton: {
+        backgroundColor: '#262626',
+        borderRadius: 20,
+        paddingVertical: 8,
+        paddingHorizontal: 18,
+        marginRight: 10,
+        borderWidth: 1,
+        borderColor: '#262626',
+    },
+    selectedCategoryButton: {
+        backgroundColor: '#E50914',
+        borderColor: '#E50914',
+    },
+    categoryButtonText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    selectedCategoryButtonText: {
+        color: '#FFF',
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 15,
+        marginTop: 20,
+    },
+    sectionTitle: {
+        color: '#FFF',
+        fontSize: 22,
+        fontWeight: 'bold',
+    },
+    seeAllText: {
+        color: '#E50914',
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    movieListHorizontalContent: {
+        paddingBottom: 20,
+    },
+    movieCardHorizontal: {
+        width: 120,
+        marginRight: 15,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#1C1C1C',
+        height: 220,
+        paddingBottom: 5,
+    },
+    movieListVerticalContent: {
+        paddingVertical: 10,
+        paddingHorizontal: cardMargin / 2,
+    },
+    row: {
+        justifyContent: 'space-between',
+        marginBottom: cardMargin,
+    },
+    movieCardVertical: {
+        width: cardWidth,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#1C1C1C',
+        height: 280,
+        marginBottom: 0,
+    },
+    moviePoster: {
+        width: '100%',
+        height: 160,
+        borderRadius: 8,
+    },
+    movieTitleCard: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: 'bold',
+        marginTop: 8,
+        paddingHorizontal: 5,
+        textAlign: 'center',
+    },
+    movieInfoCard: {
+        color: '#A0A0A0',
+        fontSize: 12,
+        paddingHorizontal: 5,
+        textAlign: 'center',
+        marginTop: 2,
+    },
+    loadingIndicator: {
+        marginTop: 50,
+        marginBottom: 50,
+    },
+    emptyListText: {
+        textAlign: 'center',
+        marginTop: 20,
+        fontSize: 16,
+        color: '#A0A0A0',
+        width: '100%',
+    },
 });
 
 export default MovieListScreen;
