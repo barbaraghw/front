@@ -1,3 +1,4 @@
+// src/screens/RegisterScreen.tsx (or wherever your RegisterScreen is located)
 import React, { useState } from 'react';
 import {
   View,
@@ -9,10 +10,10 @@ import {
   Image
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../../App';
+import { RootStackParamList } from '../../App'; // Ensure this path is correct
 import axios from 'axios';
 import type { AxiosError } from 'axios';
-import { RegisterResponse, ErrorResponse } from '../types/api';
+import { RegisterResponse, ErrorResponse } from '../types/api'; // Ensure this path is correct
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
@@ -20,6 +21,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/ap
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState(''); // <--- NEW STATE FOR USERNAME
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -29,8 +31,20 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       return;
     }
 
+    // Optional: Basic frontend validation for username
+    if (!username.trim()) {
+      Alert.alert('Error', 'El nombre de usuario no puede estar vacío.');
+      return;
+    }
+    if (username.trim().length < 3) {
+      Alert.alert('Error', 'El nombre de usuario debe tener al menos 3 caracteres.');
+      return;
+    }
+
+
     try {
-      const response = await axios.post<RegisterResponse>(`${API_URL}/auth/register`, { email, password });
+      // <--- INCLUDE USERNAME IN THE AXIOS POST REQUEST ---
+      const response = await axios.post<RegisterResponse>(`${API_URL}/auth/register`, { email, username, password });
       Alert.alert('Éxito', response.data.message);
       navigation.goBack();
     } catch (error) {
@@ -51,7 +65,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Logo de la aplicación */}
       <Image
-        source={require('../../assets/logo.png')}
+        source={require('../../assets/logo.png')} // Ensure this path is correct for your logo
         style={styles.logo}
       />
       <Text style={styles.title}>Create your Account</Text>
@@ -65,6 +79,16 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         value={email}
         onChangeText={setEmail}
       />
+      {/* <--- NEW USERNAME INPUT FIELD --- */}
+      <TextInput
+        style={styles.input}
+        placeholder="Nombre de Usuario"
+        placeholderTextColor="#888"
+        autoCapitalize="none" // Usernames are often case-sensitive on backend, keep as is
+        value={username}
+        onChangeText={setUsername}
+      />
+      {/* <--- END NEW USERNAME INPUT FIELD --- */}
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -142,7 +166,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
-    marginBottom: 30, // Ajusta si necesitas más espacio debajo del botón
+    marginBottom: 30,
   },
   primaryButtonText: {
     color: '#fff',
