@@ -4,16 +4,19 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View, Text } from 'react-native';
+import { ActivityIndicator, View, Text, Platform } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
-
+import * as SystemUI from 'expo-system-ui';
+import * as NavigationBar from 'expo-navigation-bar';
 // --- VERIFY THESE IMPORTS ---
 // Your MovieListScreen is now your "Home" equivalent
 import MovieListScreen from './src/screens/MovieListScreen';
 import MovieDetailScreen from './src/screens/MovieDetailScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import AccountScreen from './src/screens/AccountScreen';
+import CommentsScreen from './src/screens/CommentScreen'; // Screen to VIEW all comments
+import AddCommentScreen from './src/screens/AddCommentScreen';
 // ----------------------------
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type RootStackParamList = {
     Login: undefined;
     Register: undefined;
+    BottomTabs: undefined;
     MainTabs: {
         screen?: keyof BottomTabParamList;
         params?: BottomTabParamList[keyof BottomTabParamList];
@@ -29,7 +33,18 @@ export type RootStackParamList = {
     SearchScreen: undefined;
     // --- CAMBIO: Actualizar el tipo para MovieList ---
     MovieList: { type?: 'latest' | 'popular' | 'category' | 'genre' | 'all'; category?: string; genreId?: number; sortBy?: 'release_date' | 'vote_average' | 'title'; sortOrder?: 'desc' | 'asc' };
-    // --- FIN CAMBIO ---
+    Comments: { movieId: string; movieTitle: string }; // For viewing all comments
+
+    AddComment: {
+    movieId: string;
+    movieTitle: string;
+    movieYear: string;
+    posterPath?: string;
+    // Optional properties for editing an existing comment
+    commentId?: string; // ID of the comment to edit
+    initialText?: string; // Current text of the comment
+    initialRating?: number; // Current rating of the comment
+  };
 };
 export type BottomTabParamList = {
     // ONLY ONE PRIMARY MOVIE TAB: 'Movies'
@@ -99,6 +114,12 @@ const App = () => {
             }
         };
         checkToken();
+        if (Platform.OS === 'android') {
+            // Set the navigation bar color to match your app's background
+            NavigationBar.setBackgroundColorAsync('#0A0A0A');// <--- Changed SystemUI to NavigationBar
+            // You might also want to hide it in some cases or change its behavior
+            // NavigationBar.setNativeNavigationBarVisibilityAsync(NavigationBar.NavigationBarVisibility.HIDDEN); // Example for hiding
+        }
     }, []);
 
     if (isLoading) {
@@ -109,6 +130,9 @@ const App = () => {
             </View>
         );
     }
+
+    
+
 
     return (
         <NavigationContainer>
@@ -129,6 +153,8 @@ const App = () => {
                     This MovieList route is separate from the 'Movies' tab.
                 */}
                 <Stack.Screen name="MovieList" component={MovieListScreen} />
+                <Stack.Screen name="Comments" component={CommentsScreen} />
+                <Stack.Screen name="AddComment" component={AddCommentScreen} />
             </Stack.Navigator>
         </NavigationContainer>
     );
