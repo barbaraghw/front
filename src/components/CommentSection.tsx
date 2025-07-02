@@ -22,6 +22,7 @@ export interface CommentUser {
     _id: string;
     username: string;
     avatar?: string;
+    isCritic: boolean; // Ya existe, ¡perfecto!
 }
 
 export interface ICommentClient {
@@ -69,7 +70,24 @@ const CommentSection: React.FC<CommentSectionProps> = ({
                 `${API_URL}/comments/movie/${movieId}`,
                 { headers }
             );
-            setComments(response.data.data.comments);
+            let fetchedComments = response.data.data.comments;
+
+            // <--- INICIO DE MODIFICACIÓN: Lógica de ordenamiento para críticos ---
+            fetchedComments.sort((a, b) => {
+                // Priorizar críticos: si 'a' es crítico y 'b' no, 'a' va primero.
+                if (a.user.isCritic && !b.user.isCritic) {
+                    return -1;
+                }
+                // Si 'b' es crítico y 'a' no, 'b' va primero.
+                if (!a.user.isCritic && b.user.isCritic) {
+                    return 1;
+                }
+                // Si ambos son críticos o ninguno lo es, ordenar por fecha (más reciente primero)
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+            // <--- FIN DE MODIFICACIÓN: Lógica de ordenamiento ---
+
+            setComments(fetchedComments);
         } catch (error) {
             console.error('Error fetching comments:', error);
             Alert.alert('Error', 'Failed to load comments.');
@@ -141,13 +159,15 @@ const CommentSection: React.FC<CommentSectionProps> = ({
 
     const renderStars = (rating: number) => {
     // AÑADE ESTE LOG para depurar si el rating llega correctamente a este componente
-    console.log('[DEBUG CommentSection] Rating recibido para renderizar:', rating);
+    // console.log('[DEBUG CommentSection] Rating recibido para renderizar:', rating);
 
     const stars = [];
     // La CLAVE: Usar Math.round(rating * 2) / 2 para manejar ratings enteros y con .5
     // Esto asegura que un rating de 1 se trate como 1.0, y 3 como 3.0.
     // Si en el futuro recibes 3.5, también lo manejará correctamente.
-    const displayRating = Math.round(rating * 2) / 2;
+    // Ajusta la calificación a una escala de 1-5 si tu diseño de estrellas es de 5
+    // Si tu rating es de 1-10, divídelo entre 2 para la visualización de 5 estrellas
+    const displayRating = (Math.round(rating * 2) / 2); // (rating 1-10) -> (displayRating 0.5-5)
 
     for (let i = 1; i <= 5; i++) {
         let iconName: 'star' | 'star-half' | 'star-outline';
@@ -172,17 +192,28 @@ const CommentSection: React.FC<CommentSectionProps> = ({
     }
     return <View style={styles.starsContainer}>{stars}</View>;
 };
-
     const renderComment = ({ item }: { item: ICommentClient }) => {
+        console.log(`[DEBUG CommentSection] Comment from ${item.user.username}, isCritic: ${item.user.isCritic}, Rating: ${item.rating}`);
         const isMyComment = currentUserAuthId && item.user._id === currentUserAuthId;
         const userAvatar = item.user.avatar || 'https://via.placeholder.com/40/222222/FFFFFF?text=AV';
 
         return (
-            <View style={styles.commentCard}>
+        <View style={[
+            styles.commentCard,
+            item.user.isCritic && styles.criticCommentCard // Aplica estilo dorado si es crítico
+        ]}>
+            {/* <--- FIN DE MODIFICACIÓN: Aplicar estilo de crítico condicionalmente --- */}
                 <View style={styles.commentHeader}>
                     <Image source={{ uri: userAvatar }} style={styles.avatar} />
                     <View style={styles.commentUserInfo}>
                         <Text style={styles.commentUsername}>{item.user.username}</Text>
+                        {/* <--- INICIO DE MODIFICACIÓN: Mostrar tag "CRITICO" --- */}
+                        {item.user.isCritic && (
+                            <View style={styles.criticTag}>
+                                 <Text style={styles.criticTagText}>CRÍTICO</Text>
+                            </View>
+                        )}
+                        {/* <--- FIN DE MODIFICACIÓN: Mostrar tag "CRITICO" --- */}
                         {renderStars(item.rating)}
                     </View>
                     {isMyComment && (
@@ -441,6 +472,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#333',
     },
+    // <--- INICIO DE ESTILOS AÑADIDOS ---
+    criticCommentCard: {
+        backgroundColor: '#3E2700', // Fondo dorado oscuro
+        borderColor: '#FFD700', // Borde dorado
+        borderWidth: 1,
+    },
     commentHeader: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -456,12 +493,28 @@ const styles = StyleSheet.create({
     commentUserInfo: {
         flex: 1,
         justifyContent: 'center',
+        flexDirection: 'row', // Permite alinear el username y el tag/estrellas
+        alignItems: 'center',
+        flexWrap: 'wrap', // Para que el tag y estrellas puedan saltar de línea si el username es muy largo
     },
     commentUsername: {
         color: '#FFF',
         fontSize: 16,
         fontWeight: 'bold',
-        marginBottom: 2,
+        marginRight: 8, // Espacio entre el nombre de usuario y el tag/estrellas
+    },
+    criticTag: {
+        backgroundColor: '#FFD700', // Fondo dorado para el tag
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginRight: 8, // Espacio entre el tag y las estrellas
+        alignSelf: 'flex-start', // Alinea el tag al inicio si hay wrap
+    },
+    criticTagText: {
+        color: '#0A0A0A', // Texto oscuro sobre dorado
+        fontWeight: 'bold',
+        fontSize: 10,
     },
     starsContainer: {
         flexDirection: 'row',
