@@ -25,7 +25,8 @@ type AddCommentScreenProps = NativeStackScreenProps<RootStackParamList, 'AddComm
 const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }) => {
     const { movieId, movieTitle, movieYear, posterPath, commentId, initialText, initialRating } = route.params;
 
-    const [rating, setRating] = useState(initialRating || 0);
+    // El rating ahora puede ser un número flotante (ej. 3.5)
+    const [rating, setRating] = useState(initialRating || 0); 
     const [commentText, setCommentText] = useState(initialText || '');
     const [loading, setLoading] = useState(false);
 
@@ -36,8 +37,6 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
     const isEditing = !!commentId;
 
     useEffect(() => {
-        // Si no tenemos movieYear o posterPath (ej. viniendo de CommentsScreen para edición),
-        // los obtenemos de la API de películas.
         const fetchMovieDetailsIfNeeded = async () => {
             if (!currentMovieYear || !currentPosterPath) {
                 try {
@@ -60,36 +59,98 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
         };
 
         fetchMovieDetailsIfNeeded();
-    }, [movieId, currentMovieYear, currentPosterPath]); // Dependencias para re-ejecutar si cambian
+    }, [movieId, currentMovieYear, currentPosterPath]);
 
+    // --- MODIFICACIONES PARA MEDIAS ESTRELLAS ---
 
-    const handleStarPress = (selectedRating: number) => {
-        setRating(selectedRating);
-    };
+    // Función para manejar el toque de una estrella, permitiendo medias estrellas
+     const handleStarPress = (tappedStarValue: number) => {
+        console.log(`[DEBUG STAR PRESS] Tapped star value: ${tappedStarValue}, Current rating: ${rating}`);
 
-    const renderStars = () => {
-        const stars = [];
-        for (let i = 1; i <= 5; i++) {
-            stars.push(
-                <TouchableOpacity key={i} onPress={() => handleStarPress(i * 2)} style={styles.starButton} disabled={loading}>
-                    <Ionicons
-                        name={i * 2 <= rating ? 'star' : 'star-outline'}
-                        size={30}
-                        color={i * 2 <= rating ? '#FFD700' : '#A0A0A0'}
-                    />
-                </TouchableOpacity>
-            );
+        if (tappedStarValue === rating) {
+            // Caso 1: Se toca una estrella que ya es el valor completo del rating.
+            // Ejemplo: Rating es 3.0, se toca la 3ª estrella. Queremos que se vuelva 2.5.
+            setRating(tappedStarValue - 0.5);
+        } else if (tappedStarValue - 0.5 === rating) {
+            // Caso 2: Se toca una estrella que es el valor de media estrella del rating.
+            // Ejemplo: Rating es 2.5, se toca la 3ª estrella (que visualmente es media). Queremos que se vuelva 3.0.
+            setRating(tappedStarValue);
+        } else if (tappedStarValue < rating) {
+            // Caso 3: Se toca una estrella con un valor menor al rating actual.
+            // Esto implica que se quiere reducir el rating.
+            // Ejemplo: Rating es 4.0, se toca la 2ª estrella. Queremos que el rating sea 2.0.
+            setRating(tappedStarValue);
+        } else { // tappedStarValue > rating (implica que se está aumentando el rating o tocando una estrella vacía)
+            // Caso 4: Se toca una estrella vacía o una estrella con un valor mayor al rating actual.
+            // Queremos que el rating sea el valor completo de la estrella tocada.
+            // Ejemplo: Rating 2.0, se toca la 4ª estrella -> Rating 4.0.
+            // Ejemplo: Rating 0.0, se toca la 1ª estrella -> Rating 1.0.
+            setRating(tappedStarValue);
         }
-        return <View style={styles.starsContainer}>{stars}</View>;
+
+        // Caso especial para el rating 0 (cuando no hay ninguna estrella seleccionada)
+        if (tappedStarValue === 1 && rating === 0) {
+            setRating(0.5); // Si no hay rating y se toca la primera, empieza con 0.5
+        } else if (tappedStarValue === 0.5 && rating === 0.5) {
+             setRating(0); // If it's half and tapped again, go to 0
+        }
+
+        // Asegurarse de que el rating mínimo sea 0.5 y máximo 5.
+        // Y que no baje de 0 si se reduce la primera estrella por debajo de 0.5
+        setRating(prevRating => Math.max(prevRating < 0.5 && tappedStarValue === 1 ? 0 : 0.5, Math.min(5, prevRating)));
     };
+
+      const renderStars = () => {
+    const stars = [];
+    console.log('[DEBUG AddCommentScreen] Rating actual para renderizar:', rating); // AGREGAR ESTE LOG
+
+    for (let i = 1; i <= 5; i++) {
+        let iconName: 'star' | 'star-half' | 'star-outline';
+        let iconColor: string;
+
+        // Visual logic for the stars based on the 'rating' state
+        if (rating >= i) {
+            iconName = 'star';
+            iconColor = '#FFD700';
+        } else if (rating >= (i - 0.5)) { // Simplified condition: if rating is at least i-0.5
+            iconName = 'star-half';
+            iconColor = '#FFD700';
+        } else {
+            iconName = 'star-outline';
+            iconColor = '#A0A0A0';
+        }
+
+        stars.push(
+            <TouchableOpacity
+                key={i}
+                onPress={() => handleStarPress(i)}
+                onLongPress={() => handleStarPress(i - 0.5)}
+                delayLongPress={200}
+                style={styles.starButton} // Usamos un estilo único y genérico
+                disabled={loading}
+            >
+                <Ionicons
+                    name={iconName}
+                    size={30}
+                    color={iconColor}
+                />
+            </TouchableOpacity>
+        );
+    }
+    return <View style={styles.starsContainer}>{stars}</View>;
+};
+
+
+    // --- FIN DE MODIFICACIONES PARA MEDIAS ESTRELLAS ---
 
     const handleSubmitComment = async () => {
         if (!commentText.trim()) {
             Alert.alert('Error', 'Por favor, escribe un comentario.');
             return;
         }
-        if (rating === 0) {
-            Alert.alert('Error', 'Por favor, selecciona una puntuación.');
+        // Valida que el rating esté en el rango 1 a 5 y sea un número válido.
+        if (rating === 0 || rating < 0.5 || rating > 5 || isNaN(rating)) {
+            Alert.alert('Error', 'Por favor, selecciona una puntuación válida entre 0.5 y 5 estrellas.');
             return;
         }
 
@@ -105,8 +166,10 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
             const payload = {
                 movieId: movieId,
                 text: commentText,
-                rating: rating,
+                rating: rating, // Ya está en el formato 1-5, incluso con decimales
             };
+
+            console.log('[DEBUG SUBMIT] Payload to be sent:', payload);
 
             let response;
             if (isEditing) {
@@ -148,18 +211,12 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
         }
     };
 
-    // Esta URI usará currentPosterPath, que es reactivo a los datos obtenidos en useEffect
-    const fullPosterUri = currentPosterPath ? `https://image.tmdb.org/t/p/w200${currentPosterPath}` : 'https://via.placeholder.com/150/0A0A0A/FFFFFF?text=No+Poster'; // Fallback más descriptivo
+    const fullPosterUri = currentPosterPath ? `https://image.tmdb.org/t/p/w200${currentPosterPath}` : 'https://via.placeholder.com/150/0A0A0A/FFFFFF?text=No+Poster';
 
     return (
-        // El SafeAreaView es el contenedor principal y el que dictará los bordes seguros.
-        // Asegúrate de que su color de fondo sea el que quieres para toda la pantalla.
         <SafeAreaView style={styles.safeArea}>
-            {/* La StatusBar sigue siendo relevante para el estilo de la barra de estado */}
             <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
 
-            {/* El header se manejará directamente como el primer hijo del SafeAreaView
-                para que respete el borde superior sin doble padding */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton} disabled={loading}>
                     <Ionicons name="close" size={28} color="#FFF" />
@@ -174,8 +231,6 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
                 </TouchableOpacity>
             </View>
 
-            {/* El contentContainer toma el resto del espacio.
-                El padding para el borde inferior lo manejará automáticamente el SafeAreaView. */}
             <View style={styles.contentContainer}>
                 <View style={styles.topSection}>
                     <View style={styles.movieInfoRow}>
@@ -231,14 +286,12 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     contentContainer: {
-        flex: 1, // Hace que el contentContainer ocupe todo el espacio restante
+        flex: 1,
         padding: 20,
-        // Agrega un layout de columna para que las secciones se apilen y el TextInput crezca
         flexDirection: 'column',
     },
     topSection: {
-        // Agrupa movieInfoRow y ratingContainer en una sección que no crezca
-        marginBottom: 20, // Espacio entre esta sección y el TextInput
+        marginBottom: 20,
     },
     movieInfoRow: {
         flexDirection: 'row',
@@ -250,25 +303,33 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 22,
         fontWeight: 'bold',
-        flexShrink: 1, // Permite que el texto se encoja si es muy largo
+        flexShrink: 1,
         marginRight: 10,
     },
     moviePoster: {
-        width: 80, // Aumentado ligeramente el tamaño para mejor visibilidad
-        height: 120, // Mantener la proporción (80 * 1.5)
+        width: 80,
+        height: 120,
         borderRadius: 5,
         borderWidth: 1,
         borderColor: '#333',
         backgroundColor: '#333',
     },
     ratingContainer: {
-        marginBottom: 10, // Un poco menos de margen aquí, el margen grande lo pone topSection
+        marginBottom: 10,
     },
     starsContainer: {
         flexDirection: 'row',
         marginTop: 5,
     },
-    starButton: {
+    // Nuevos estilos para los botones de media estrella
+    starButtonHalf: {
+        padding: 5,
+        marginRight: -15, // Solapa ligeramente para que las mitades se vean conectadas
+    },
+    starButtonFull: {
+        padding: 5,
+    },
+    starButton: { // Mantener si otras partes lo usan, pero los nuevos ya tienen sus propios estilos
         padding: 5,
     },
     label: {
@@ -277,8 +338,7 @@ const styles = StyleSheet.create({
         marginBottom: 5,
     },
     commentSection: {
-        flex: 1, // Hace que esta sección ocupe todo el espacio restante
-        // No marginBottom aquí para que el input vaya hasta abajo
+        flex: 1,
     },
     commentInput: {
         backgroundColor: '#222',
@@ -286,11 +346,10 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         padding: 15,
         fontSize: 16,
-        // minHeight: 120, // Eliminamos minHeight para que flex: 1 tenga control total
         textAlignVertical: 'top',
         borderWidth: 1,
         borderColor: '#333',
-        flex: 1, // Esto hace que el TextInput ocupe todo el espacio vertical disponible
+        flex: 1,
     },
 });
 

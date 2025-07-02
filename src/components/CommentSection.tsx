@@ -66,7 +66,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({
             const token = await AsyncStorage.getItem('userToken');
             const headers = token ? { Authorization: `Bearer ${token}` } : {};
             const response = await axios.get<{ data: { comments: ICommentClient[] } }>(
-                `${API_URL}/comments/${movieId}`,
+                `${API_URL}/comments/movie/${movieId}`,
                 { headers }
             );
             setComments(response.data.data.comments);
@@ -140,21 +140,38 @@ const CommentSection: React.FC<CommentSectionProps> = ({
     };
 
     const renderStars = (rating: number) => {
-        const fullStars = Math.floor(rating / 2);
-        const hasHalfStar = rating % 2 !== 0;
-        const stars = [];
-        for (let i = 0; i < fullStars; i++) {
-            stars.push(<Ionicons key={`full-${i}`} name="star" size={16} color="#4ADE80" />);
+    // AÑADE ESTE LOG para depurar si el rating llega correctamente a este componente
+    console.log('[DEBUG CommentSection] Rating recibido para renderizar:', rating);
+
+    const stars = [];
+    // La CLAVE: Usar Math.round(rating * 2) / 2 para manejar ratings enteros y con .5
+    // Esto asegura que un rating de 1 se trate como 1.0, y 3 como 3.0.
+    // Si en el futuro recibes 3.5, también lo manejará correctamente.
+    const displayRating = Math.round(rating * 2) / 2;
+
+    for (let i = 1; i <= 5; i++) {
+        let iconName: 'star' | 'star-half' | 'star-outline';
+        let iconColor = '#FFD700'; // Color para estrellas llenas/medias
+
+        if (displayRating >= i) {
+            iconName = 'star';
+        } else if (displayRating >= (i - 0.5)) {
+            iconName = 'star-half';
+        } else {
+            iconName = 'star-outline';
+            iconColor = '#A0A0A0'; // Color para estrellas vacías
         }
-        if (hasHalfStar) {
-            stars.push(<Ionicons key="half" name="star-half" size={16} color="#4ADE80" />);
-        }
-        const emptyStars = 5 - stars.length;
-        for (let i = 0; i < emptyStars; i++) {
-            stars.push(<Ionicons key={`empty-${i}`} name="star-outline" size={16} color="#A0A0A0" />);
-        }
-        return <View style={styles.starsContainer}>{stars}</View>;
-    };
+        stars.push(
+            <Ionicons
+                key={i}
+                name={iconName}
+                size={16} // Mantén el tamaño para comentarios
+                color={iconColor}
+            />
+        );
+    }
+    return <View style={styles.starsContainer}>{stars}</View>;
+};
 
     const renderComment = ({ item }: { item: ICommentClient }) => {
         const isMyComment = currentUserAuthId && item.user._id === currentUserAuthId;

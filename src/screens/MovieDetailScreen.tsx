@@ -1,5 +1,4 @@
-// src/screens/MovieDetailScreen.tsx
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -10,7 +9,7 @@ import {
     Alert,
     Dimensions,
     TouchableOpacity,
-    SafeAreaView, // Ya importado
+    SafeAreaView,
     StatusBar,
     Linking,
     Image,
@@ -38,6 +37,13 @@ interface MovieDetail {
     trailer?: string;
 }
 
+interface Comment {
+    _id: string;
+    userId: string;
+    rating: number;
+    text: string;
+}
+
 interface DecodedToken {
     id: string;
     email: string;
@@ -54,6 +60,9 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
     const [movie, setMovie] = useState<MovieDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const [userAverageRating, setUserAverageRating] = useState<number | null>(null);
+    const [loadingUserRating, setLoadingUserRating] = useState(true);
 
     useEffect(() => {
         navigation.setOptions({ title: movieTitle });
@@ -91,9 +100,59 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
         }
     }, [movieId]);
 
+    const fetchUserAverageRating = useCallback(async () => {
+        setLoadingUserRating(true);
+        try {
+            console.log(`[DEBUG RATING] Intentando obtener comentarios para movieId: ${movieId}`);
+            console.log(`[DEBUG RATING] URL de backend: ${API_URL}/comments/movie/${movieId}`);
+
+            const response = await axios.get<{ success: boolean; data: { comments: Comment[] } }>(`${API_URL}/comments/movie/${movieId}`);
+            const comments = response.data.data.comments;
+
+            // *** AÑADIR ESTE LOG PARA VER DATOS CRUDOS ***
+            console.log('[DEBUG RATING] RAW Comments from API:', JSON.stringify(comments, null, 2));
+            console.log('[DEBUG RATING] Comments used for calculation:', comments.map(c => c.rating));
+
+            console.log(`[DEBUG RATING] Respuesta de la API de comentarios (status): ${response.status}`);
+            console.log(`[DEBUG RATING] Datos de comentarios obtenidos:`, comments);
+
+            if (comments && comments.length > 0) {
+                const validRatings = comments.filter(comment => typeof comment.rating === 'number' && !isNaN(comment.rating));
+
+                console.log(`[DEBUG RATING] Ratings válidos encontrados:`, validRatings.map(c => c.rating));
+
+                if (validRatings.length > 0) {
+                    const totalRating = validRatings.reduce((sum, comment) => sum + comment.rating, 0);
+                    const average = totalRating / validRatings.length;
+                    console.log(`[DEBUG RATING] Rating promedio calculado: ${average.toFixed(1)}`);
+                    setUserAverageRating(parseFloat(average.toFixed(1)));
+                } else {
+                    console.log("[DEBUG RATING] No se encontraron ratings numéricos válidos en los comentarios.");
+                    setUserAverageRating(null);
+                }
+            } else {
+                console.log("[DEBUG RATING] No se recibieron comentarios o el array de comentarios está vacío.");
+                setUserAverageRating(null);
+            }
+        } catch (err: any) {
+            console.error('Error al obtener comentarios de usuario para el rating:', err.response?.data || err.message);
+            if (axios.isAxiosError(err) && err.response && err.response.status === 404) {
+                   console.log("[DEBUG RATING] Endpoint de comentarios respondió 404, probablemente no hay comentarios aún.");
+                   setUserAverageRating(null);
+            } else {
+                setError('Failed to load user ratings.');
+                setUserAverageRating(null);
+            }
+        } finally {
+            setLoadingUserRating(false);
+            console.log(`[DEBUG RATING] Carga de rating de usuario finalizada para movieId: ${movieId}`);
+        }
+    }, [movieId]);
+
     useEffect(() => {
         fetchMovieDetails();
-    }, [fetchMovieDetails]);
+        fetchUserAverageRating();
+    }, [fetchMovieDetails, fetchUserAverageRating]);
 
     const handlePlayTrailer = () => {
         if (movie?.trailer) {
@@ -121,9 +180,51 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
         }
     };
 
+    // FUNCIÓN PARA RENDERIZAR LAS ESTRELLAS DEL RATING DE USUARIO
+    // AHORA RECIBE userAverageRating COMO ARGUMENTO
+    const renderUserRatingStars = (ratingToDisplay: number | null) => {
+        console.log('[DEBUG DISPLAY] Rating recibido en renderUserRatingStars:', ratingToDisplay);
+        if (ratingToDisplay === null || isNaN(ratingToDisplay)) {
+            return <Text style={styles.noRatingText}>Sin ratings aún</Text>;
+        }
+
+        const stars = [];
+        const roundedRating = Math.round(ratingToDisplay * 2) / 2;
+        console.log('[DEBUG DISPLAY] Rounded rating para display:', roundedRating);
+
+        for (let i = 1; i <= 5; i++) {
+            let iconName: 'star' | 'star-half' | 'star-outline';
+            let iconColor = '#FFD700';
+
+            if (roundedRating >= i) {
+                iconName = 'star';
+            } else if (roundedRating >= (i - 0.5)) {
+                iconName = 'star-half';
+            } else {
+                iconName = 'star-outline';
+                iconColor = '#A0A0A0';
+            }
+
+            stars.push(
+                <Ionicons
+                    key={i}
+                    name={iconName}
+                    size={20}
+                    color={iconColor}
+                />
+            );
+        }
+        return (
+            <View style={styles.ratingSection}>
+                <View style={styles.starsContainerMovieDetail}>{stars}</View>
+                <Text style={styles.ratingText}>{ratingToDisplay.toFixed(1)} / 5</Text>
+            </View>
+        );
+    };
+
     if (loading) {
         return (
-            <SafeAreaView style={styles.loadingContainer}> {/* Use SafeAreaView here too */}
+            <SafeAreaView style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#E50914" />
                 <Text style={styles.loadingText}>Loading movie details...</Text>
             </SafeAreaView>
@@ -132,7 +233,7 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
 
     if (error) {
         return (
-            <SafeAreaView style={styles.errorContainer}> {/* Use SafeAreaView here too */}
+            <SafeAreaView style={styles.errorContainer}>
                 <Text style={styles.errorText}>{error}</Text>
                 <TouchableOpacity onPress={fetchMovieDetails} style={styles.retryButton}>
                     <Text style={styles.retryButtonText}>Retry</Text>
@@ -143,7 +244,7 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
 
     if (!movie) {
         return (
-            <SafeAreaView style={styles.errorContainer}> {/* Use SafeAreaView here too */}
+            <SafeAreaView style={styles.errorContainer}>
                 <Text style={styles.errorText}>Movie not found.</Text>
             </SafeAreaView>
         );
@@ -154,15 +255,11 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
 
     return (
         <SafeAreaView style={styles.fullScreenContainer}>
-            <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" /> {/* Set background color for status bar */}
+            <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
             <ScrollView style={styles.container}>
                 {backdropUri ? (
                     <ImageBackground source={{ uri: backdropUri }} style={styles.backdrop}>
                         <View style={styles.overlay} />
-                        {/* Adjust backButton position to be relative to the top of the ImageBackground,
-                            assuming ImageBackground will be pushed down by SafeAreaView's default padding.
-                            A more robust solution for fixed headers/buttons on top of scrollable content
-                            is often to put them OUTSIDE the ScrollView. But for now, let's adjust. */}
                         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                             <Ionicons name="arrow-back" size={28} color="#FFF" />
                         </TouchableOpacity>
@@ -170,10 +267,12 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
                             <Image source={{ uri: posterUri || 'https://via.placeholder.com/150' }} style={styles.poster} />
                             <View style={styles.movieInfo}>
                                 <Text style={styles.movieTitle}>{movie.title}</Text>
-                                <View style={styles.ratingContainer}>
-                                    <Ionicons name="star" size={20} color="#FFD700" />
-                                    <Text style={styles.ratingText}>{movie.vote_average}/10</Text>
-                                </View>
+                                {/* CADA LLAMADA A renderUserRatingStars DEBE PASAR userAverageRating */}
+                                {loadingUserRating ? (
+                                    <ActivityIndicator size="small" color="#FFF" />
+                                ) : (
+                                    renderUserRatingStars(userAverageRating)
+                                )}
                                 {movie.runtime && (
                                     <Text style={styles.runtimeText}>{`${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m`}</Text>
                                 )}
@@ -196,17 +295,18 @@ const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation
                     </ImageBackground>
                 ) : (
                     <View style={styles.noBackdropContainer}>
-                        {/* Similar adjustment for backButtonAbsolute */}
                         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButtonAbsolute}>
                             <Ionicons name="arrow-back" size={28} color="#FFF" />
                         </TouchableOpacity>
                         <Image source={{ uri: posterUri || 'https://via.placeholder.com/150' }} style={styles.noBackdropPoster} />
                         <View style={styles.noBackdropMovieInfo}>
                             <Text style={styles.movieTitle}>{movie.title}</Text>
-                            <View style={styles.ratingContainer}>
-                                <Ionicons name="star" size={20} color="#FFD700" />
-                                <Text style={styles.ratingText}>{movie.vote_average}/10</Text>
-                            </View>
+                            {/* CADA LLAMADA A renderUserRatingStars DEBE PASAR userAverageRating */}
+                            {loadingUserRating ? (
+                                <ActivityIndicator size="small" color="#FFF" />
+                            ) : (
+                                renderUserRatingStars(userAverageRating)
+                            )}
                             {movie.runtime && (
                                 <Text style={styles.runtimeText}>{`${Math.floor(movie.runtime / 60)}h ${movie.runtime % 60}m`}</Text>
                             )}
@@ -297,8 +397,7 @@ const styles = StyleSheet.create({
         height: Dimensions.get('window').height * 0.5,
         justifyContent: 'flex-end',
         position: 'relative',
-        // Add paddingTop to the backdrop to ensure content starts below the safe area
-        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0, // Apply status bar height to android
+        paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0,
     },
     overlay: {
         ...StyleSheet.absoluteFillObject,
@@ -306,9 +405,7 @@ const styles = StyleSheet.create({
     },
     backButton: {
         position: 'absolute',
-        // Using `top: 15` is typically enough if `SafeAreaView` provides initial padding,
-        // otherwise `StatusBar.currentHeight + 10` on Android, or a fixed value for iOS
-        top: Platform.OS === 'ios' ? 15 : 15, // Adjusted to be relative to the top of its parent (backdrop)
+        top: Platform.OS === 'ios' ? 15 : 15,
         left: 20,
         zIndex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -340,17 +437,18 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 5,
     },
-    ratingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 5,
-    },
-    ratingText: {
-        color: '#FFD700',
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginLeft: 5,
-    },
+    // Este estilo ya no se usa directamente para el rating principal, pero podría existir de antes
+    // ratingContainer: {
+    //     flexDirection: 'row',
+    //     alignItems: 'center',
+    //     marginBottom: 5,
+    // },
+    // ratingText: { // Este era para el rating TMDB, ahora lo usaremos para el promedio de usuario
+    //     color: '#FFD700',
+    //     fontSize: 18,
+    //     fontWeight: 'bold',
+    //     marginLeft: 5,
+    // },
     runtimeText: {
         color: '#A0A0A0',
         fontSize: 16,
@@ -384,8 +482,7 @@ const styles = StyleSheet.create({
         marginLeft: 10,
     },
     noBackdropContainer: {
-        // `paddingTop` here to explicitly push content below status bar/notch for no backdrop case
-        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 70, // Adding 20 for extra space if on Android without backdrop
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 20 : 70,
         paddingHorizontal: 20,
         backgroundColor: '#1C1C1C',
         flexDirection: 'row',
@@ -406,8 +503,7 @@ const styles = StyleSheet.create({
     },
     backButtonAbsolute: {
         position: 'absolute',
-        // Similar adjustment as `backButton`
-        top: Platform.OS === 'ios' ? 15 : 15, // Position relative to parent's top (noBackdropContainer)
+        top: Platform.OS === 'ios' ? 15 : 15,
         left: 20,
         zIndex: 10,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -416,8 +512,7 @@ const styles = StyleSheet.create({
     },
     detailsContainer: {
         padding: 20,
-        // Add padding bottom to ensure last elements are not cut off by system navigation gestures/bars
-        paddingBottom: Platform.OS === 'ios' ? 0 : 20, // iOS handles safe area, Android sometimes needs a little extra for bottom elements
+        paddingBottom: Platform.OS === 'ios' ? 0 : 20,
     },
     sectionHeading: {
         color: '#FFF',
@@ -441,7 +536,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-around',
         marginTop: 20,
-        marginBottom: 30, // Keep this as SafeAreaView handles bottom padding
+        marginBottom: 30,
     },
     commentActionButton: {
         flex: 1,
@@ -466,6 +561,28 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    // *** NUEVOS ESTILOS AÑADIDOS AQUI ***
+    starsContainerMovieDetail: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginRight: 5,
+    },
+    ratingText: { // Reutilizado, asegura que esté definido si no lo estaba
+        color: '#FFD700', // Un color amarillo para el texto de la calificación
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginLeft: 5, // Un poco de espacio desde las estrellas
+    },
+    ratingSection: { // Contenedor para alinear estrellas y texto
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 5,
+    },
+    noRatingText: { // Para el mensaje "Sin ratings aún"
+        color: '#A0A0A0',
+        fontSize: 16,
+        marginBottom: 5,
     },
 });
 
