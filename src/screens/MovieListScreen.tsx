@@ -1,5 +1,4 @@
-// src/screens/MovieListScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -15,7 +14,7 @@ import {
     Image,
     Dimensions,
     StatusBar,
-    Platform, // Import StatusBar for setting its style
+    Platform,
 } from 'react-native';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -23,7 +22,7 @@ import { NativeStackScreenProps, NativeStackNavigationProp } from '@react-naviga
 import { RootStackParamList, BottomTabParamList } from '../../App';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -63,23 +62,27 @@ const cardWidth = (windowWidth - (numColumns + 1) * cardMargin) / numColumns;
 const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) => {
     const rootStackNavigation = navigation as NativeStackNavigationProp<RootStackParamList>;
     const [userName, setUserName] = useState<string | null>(null);
-    const [latestMovies, setLatestMovies] = useState<Movie[]>([]);
 
+    const [latestMovies, setLatestMovies] = useState<Movie[]>([]);
     const [popularMovies, setPopularMovies] = useState<Movie[]>([]);
+
+    const [filteredMovies, setFilteredMovies] = useState<Movie[]>([]);
+    const [loadingFiltered, setLoadingFiltered] = useState(false);
+
     const [loadingLatest, setLoadingLatest] = useState(true);
     const [loadingPopular, setLoadingPopular] = useState(true);
 
     const [refreshing, setRefreshing] = useState(false);
 
+    // Filter States
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedGenreId, setSelectedGenreId] = useState<number | null>(null);
+    const [selectedGenreName, setSelectedGenreName] = useState('All');
     const [minRating, setMinRating] = useState('');
     const [startYear, setStartYear] = useState('');
     const [endYear, setEndYear] = useState('');
-    const [sortBy, setSortBy] = useState<'release_date' | 'vote_average' | 'title'>('release_date');
+    const [sortBy, setSortBy] = useState<'release_date' | 'vote_average'>('release_date');
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
-
-    const [selectedCategory, setSelectedCategory] = useState('All');
+    const [showFilters, setShowFilters] = useState(false);
 
     const genres = [
         { id: 28, name: 'Action' }, { id: 12, name: 'Adventure' }, { id: 16, name: 'Animation' },
@@ -101,10 +104,8 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
         try {
             const storedName = await AsyncStorage.getItem('userName');
             if (storedName) {
-                console.log('Fetched userName:', storedName);
                 setUserName(storedName);
             } else {
-                console.log('Fetched userName: null');
                 setUserName(null);
             }
         } catch (error) {
@@ -114,10 +115,9 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
     }
 
     const fetchMoviesSection = useCallback(async (
-        type: 'latest' | 'popular' | 'category' | 'genre' | 'all',
+        type: 'latest' | 'popular',
         setter: React.Dispatch<React.SetStateAction<Movie[]>>,
         setLoading: React.Dispatch<React.SetStateAction<boolean>>,
-        currentGenreId: number | null = null
     ) => {
         setLoading(true);
         try {
@@ -129,21 +129,11 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
             }
 
             const params: any = {};
-
             if (type === 'latest') {
-                params.type = 'latest';
                 params.sortBy = 'release_date';
                 params.order = 'desc';
             } else if (type === 'popular') {
-                params.type = 'popular';
-            } else if (type === 'category' || type === 'genre') {
-                if (currentGenreId) {
-                    params.genreId = currentGenreId;
-                }
-                params.sortBy = 'release_date';
-                params.order = 'desc';
-            } else { // 'all' or default
-                params.sortBy = 'release_date';
+                params.sortBy = 'vote_average'; // Popular usually sorted by vote_average
                 params.order = 'desc';
             }
 
@@ -162,63 +152,217 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
         }
     }, [rootStackNavigation]);
 
-    useFocusEffect(
-        React.useCallback(() => {
-            fetchAndSetUserName();
-            return () => {
-                // Optional: cleanup logic
-            };
-        }, [])
-    );
+    // This useCallback function encapsulates the logic for fetching filtered movies.
+    // Its dependencies are the filter states themselves.
+    const fetchFilteredMovies = useCallback(async () => {
+        setLoadingFiltered(true);
+        setFilteredMovies([]); // Clear previous filtered movies immediately
+
+        try {
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) {
+                Alert.alert('Error', 'No hay token de autenticación. Por favor, inicia sesión.');
+                rootStackNavigation.navigate('Login');
+                return;
+            }
+
+            const params: any = {};
+
+            if (searchQuery.trim() !== '') {
+                params.search = searchQuery.trim();
+            }
+
+            if (selectedGenreName !== 'All') {
+                const genre = genres.find(g => g.name === selectedGenreName);
+                if (genre) {
+                    params.genreId = genre.id;
+                    console.log(`[DEBUG] Filtering by genre: ${genre.name} (ID: ${genre.id})`);
+                } else {
+                    console.warn(`[DEBUG] Genre '${selectedGenreName}' not found in local list.`);
+                }
+            }
+
+            const parsedMinRating = parseFloat(minRating);
+            if (!isNaN(parsedMinRating) && parsedMinRating >= 0 && parsedMinRating <= 10) {
+                params.minRating = parsedMinRating;
+            }
+
+            const parsedStartYear = parseInt(startYear);
+            const parsedEndYear = parseInt(endYear);
+
+            if (!isNaN(parsedStartYear) && parsedStartYear > 0) {
+                params.startYear = parsedStartYear;
+            }
+            if (!isNaN(parsedEndYear) && parsedEndYear > 0) {
+                params.endYear = parsedEndYear;
+            }
+
+            params.sortBy = sortBy;
+            params.order = sortOrder;
+
+            console.log("[DEBUG] Fetching with params:", params);
+
+            const response = await axios.get<Movie[]>(`${API_URL}/movies`, {
+                headers: { Authorization: `Bearer ${token}` },
+                params,
+            });
+            console.log(`[DEBUG] Received ${response.data.length} movies with filters.`);
+            setFilteredMovies(response.data);
+        } catch (error) {
+            const axiosError = error as any;
+            Alert.alert('Error', axiosError.response?.data?.message || `Error al cargar películas con los filtros.`);
+            console.error(`Error al cargar películas con filtros:`, axiosError.response?.data || axiosError.message);
+            setFilteredMovies([]);
+        } finally {
+            setLoadingFiltered(false);
+        }
+    }, [rootStackNavigation, searchQuery, selectedGenreName, minRating, startYear, endYear, sortBy, sortOrder]);
+
+
+    // Ref to prevent unnecessary re-fetches when navigating back to 'MovieList' with same params
+    // For the main Movies tab, we'll use a boolean to indicate initial load
+    const initialMovieListLoadRef = useRef<{ type?: string; category?: string; genreId?: number } | boolean>(false); // Changed to boolean for main tab
+
+    // useFocusEffect for initial data load based on route (main tab or 'See All' screen)
     useFocusEffect(
         useCallback(() => {
-            if ('name' in route && route.name === 'MovieList' && route.params) {
-                const currentRouteParams = route.params as RootStackParamList['MovieList'];
+            fetchAndSetUserName();
+
+            const isMainMoviesTab = ('name' in route && route.name === 'Movies');
+            const isMovieListRoute = ('name' in route && route.name === 'MovieList');
+            const currentRouteParams = isMovieListRoute ? (route.params as RootStackParamList['MovieList']) : null;
+
+            // Determine if the route parameters have genuinely changed for 'MovieList'
+            const hasRouteParamsChanged = isMovieListRoute && (
+                currentRouteParams?.type !== (initialMovieListLoadRef.current as any)?.type ||
+                currentRouteParams?.category !== (initialMovieListLoadRef.current as any)?.category ||
+                currentRouteParams?.genreId !== (initialMovieListLoadRef.current as any)?.genreId
+            );
+
+            // Logic for 'MovieList' (See All) screens
+            if (isMovieListRoute && currentRouteParams && (hasRouteParamsChanged || typeof initialMovieListLoadRef.current === 'boolean')) {
+                console.log(`[DEBUG] MovieList route focus effect triggered with params change or initial load.`);
+                setLatestMovies([]); // Clear other lists
+                setPopularMovies([]);
+
                 if (currentRouteParams.type === 'latest') {
                     fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
                 } else if (currentRouteParams.type === 'popular') {
                     fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
-                } else if (currentRouteParams.type === 'category' || currentRouteParams.type === 'genre') {
-                    const genreId = currentRouteParams.genreId || (currentRouteParams.category ? genres.find(g => g.name === currentRouteParams.category)?.id : null);
-                    fetchMoviesSection('category', setLatestMovies, setLoadingLatest, genreId);
-                } else {
-                    fetchMoviesSection('all', setLatestMovies, setLoadingLatest);
+                } else { // Handle 'category' or 'genre' or generic 'MovieList'
+                    const genreNameFromParam = currentRouteParams.category || genres.find(g => g.id === currentRouteParams.genreId)?.name;
+                    if (genreNameFromParam) {
+                        setSelectedGenreName(genreNameFromParam);
+                    } else {
+                        setSelectedGenreName('All');
+                    }
+                    // For category/genre see all, trigger fetch filtered movies right away
+                    // since the genre state has been updated.
+                    // IMPORTANT: This 'fetchFilteredMovies()' call here will trigger the combined useEffect below,
+                    // so we don't need to explicitly call it here. The state changes will take care of it.
+                    // fetchFilteredMovies(); // <--- REMOVE THIS LINE
                 }
-                if (currentRouteParams.type !== 'latest') setLatestMovies([]);
-                if (currentRouteParams.type !== 'popular') setPopularMovies([]);
-            } else if ('name' in route && route.name === 'Movies') {
+                // Update the ref to prevent re-fetching on subsequent identical focuses
+                initialMovieListLoadRef.current = {
+                    type: currentRouteParams.type,
+                    category: currentRouteParams.category,
+                    genreId: currentRouteParams.genreId
+                };
+            } else if (isMainMoviesTab && initialMovieListLoadRef.current === false) { // ONLY fetch on initial mount of main tab
+                console.log(`[DEBUG] Main Movies tab focus effect triggered for initial load.`);
                 fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
                 fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
+                // fetchFilteredMovies(); // <--- REMOVE THIS LINE - the combined useEffect will handle this based on default filter states
+                initialMovieListLoadRef.current = true; // Mark as loaded for main tab
+            } else {
+                console.log(`[DEBUG] Focus effect triggered, but no relevant route change or initial load for current view.`);
             }
-        }, [route, fetchMoviesSection])
+
+            // Cleanup for useFocusEffect - reset ref when component blurs
+            return () => {
+                // If it's a MovieList route, we clear the ref on blur so it re-fetches if re-focused
+                // with potentially different params (e.g., if you navigate to another MovieList)
+                // For the main tab, we don't reset it to false here, as its initial load is persistent.
+                if (isMovieListRoute) {
+                    initialMovieListLoadRef.current = false; // Reset to boolean for MovieList route when leaving
+                }
+            };
+        }, [
+            route,
+            fetchAndSetUserName,
+            fetchMoviesSection,
+            // fetchFilteredMovies, // REMOVE THIS as it will now be managed by the combined useEffect below
+            genres,
+            // selectedGenreName is not a dependency here to avoid loop if changed by route params
+            // It's intentionally excluded because setSelectedGenreName is called within this effect
+        ])
     );
+
+    // COMBINED useEffect for all filter changes (text, category, sort)
+    // This will trigger fetchFilteredMovies when ANY of these filter states change.
+    // It applies debouncing to prevent excessive API calls during rapid text input.
+    useEffect(() => {
+        const isMainMoviesTab = ('name' in route && route.name === 'Movies');
+        const isMovieListRoute = ('name' in route && route.name === 'MovieList');
+        const currentRouteParams = isMovieListRoute ? (route.params as RootStackParamList['MovieList']) : null;
+
+        // If it's the main movies tab OR it's a MovieList route displaying filtered content
+        // (i.e., not 'latest' or 'popular' specific lists)
+        const shouldFetchFiltered = isMainMoviesTab || (isMovieListRoute && !currentRouteParams?.type);
+
+        if (shouldFetchFiltered) {
+            console.log(`[DEBUG] Filter state changed, triggering fetchFilteredMovies (debounced for text inputs).`);
+            const handler = setTimeout(() => {
+                fetchFilteredMovies();
+            }, 300); // Debounce for 300ms
+
+            return () => clearTimeout(handler);
+        }
+    }, [
+        searchQuery,
+        selectedGenreName, // Category changes
+        minRating,
+        startYear,
+        endYear,
+        sortBy, // Sort changes
+        sortOrder, // Sort changes
+        fetchFilteredMovies, // fetchFilteredMovies is a useCallback, so its reference is stable unless its dependencies change.
+        route // To determine if it's the main tab or a specific MovieList route
+    ]);
+
 
     const onRefresh = useCallback(() => {
         setRefreshing(true);
-        Promise.all([
-            fetchAndSetUserName(),
-            (() => {
-                if ('name' in route && route.name === 'MovieList' && route.params) {
-                    const currentRouteParams = route.params as RootStackParamList['MovieList'];
-                    if (currentRouteParams.type === 'latest') {
-                        return fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
-                    } else if (currentRouteParams.type === 'popular') {
-                        return fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
-                    } else if (currentRouteParams.type === 'category' || currentRouteParams.type === 'genre') {
-                        const genreId = currentRouteParams.genreId || (currentRouteParams.category ? genres.find(g => g.name === currentRouteParams.category)?.id : null);
-                        return fetchMoviesSection('category', setLatestMovies, setLoadingLatest, genreId);
-                    } else {
-                        return fetchMoviesSection('all', setLatestMovies, setLoadingLatest);
-                    }
+        fetchAndSetUserName().then(() => {
+            const isMovieListRoute = ('name' in route && route.name === 'MovieList');
+            const currentRouteParams = isMovieListRoute ? (route.params as RootStackParamList['MovieList']) : null;
+
+            if (isMovieListRoute && currentRouteParams) {
+                if (currentRouteParams.type === 'latest') {
+                    return fetchMoviesSection('latest', setLatestMovies, setLoadingLatest).finally(() => setRefreshing(false));
+                } else if (currentRouteParams.type === 'popular') {
+                    return fetchMoviesSection('popular', setPopularMovies, setLoadingPopular).finally(() => setRefreshing(false));
                 } else {
-                    return Promise.all([
-                        fetchMoviesSection('latest', setLatestMovies, setLoadingLatest),
-                        fetchMoviesSection('popular', setPopularMovies, setLoadingPopular),
-                    ]);
+                    const genreNameFromParam = currentRouteParams.category || genres.find(g => g.id === currentRouteParams.genreId)?.name;
+                    if (genreNameFromParam) {
+                        setSelectedGenreName(genreNameFromParam);
+                    } else {
+                        setSelectedGenreName('All');
+                    }
+                    // The combined useEffect will handle the fetch due to state change
+                    // No need to return fetchFilteredMovies() here
+                    setRefreshing(false); // Set false here as the fetch will be handled by useEffect
                 }
-            })(),
-        ]).finally(() => setRefreshing(false));
-    }, [fetchAndSetUserName, fetchMoviesSection, route]);
+            } else {
+                // Main 'Movies' tab
+                Promise.all([
+                    fetchMoviesSection('latest', setLatestMovies, setLoadingLatest),
+                    fetchMoviesSection('popular', setPopularMovies, setLoadingPopular),
+                    fetchFilteredMovies(), // Re-fetch filtered movies for the main tab as well
+                ]).finally(() => setRefreshing(false));
+            }
+        });
+    }, [fetchAndSetUserName, fetchMoviesSection, fetchFilteredMovies, route, genres]); // selectedGenreName is not a dependency here as it's set inside
 
     const renderMovieCard = ({ item }: { item: Movie }) => (
         <TouchableOpacity
@@ -244,16 +388,21 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
     );
 
     const isSeeAllView = 'name' in route && route.name === 'MovieList';
+
     const moviesToDisplayForSeeAll = isSeeAllView ? (
         route.params?.type === 'latest' ? latestMovies :
             route.params?.type === 'popular' ? popularMovies :
-                latestMovies // Default fallback if type is unknown or 'all'
+                filteredMovies
     ) : [];
 
+    const isLoadingSeeAllContent = isSeeAllView ?
+        (route.params?.type === 'latest' ? loadingLatest :
+            route.params?.type === 'popular' ? loadingPopular :
+                loadingFiltered) : false;
+
     return (
-        // Apply SafeAreaView to the entire screen
         <SafeAreaView style={styles.fullContainer}>
-            <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" /> {/* Set background color for status bar */}
+            <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
             <ScrollView
                 style={styles.container}
                 showsVerticalScrollIndicator={false}
@@ -283,20 +432,24 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
 
                         <Text style={styles.discoverTitle}>Discover Your Next{"\n"}Favorite Movie.</Text>
 
+                        {/* Genre/Category Filter */}
                         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryFilterContainer} contentContainerStyle={styles.categoryFilterContent}>
                             {categories.map((categoryName) => (
                                 <TouchableOpacity
                                     key={categoryName}
                                     style={[
                                         styles.categoryButton,
-                                        selectedCategory === categoryName && styles.selectedCategoryButton,
+                                        selectedGenreName === categoryName && styles.selectedCategoryButton,
                                     ]}
-                                    onPress={() => setSelectedCategory(categoryName)}
+                                    onPress={() => {
+                                        setSelectedGenreName(categoryName);
+                                        // The dedicated useEffect for category/sort will trigger fetchFilteredMovies
+                                    }}
                                 >
                                     <Text
                                         style={[
                                             styles.categoryButtonText,
-                                            selectedCategory === categoryName && styles.selectedCategoryButtonText,
+                                            selectedGenreName === categoryName && styles.selectedCategoryButtonText,
                                         ]}
                                     >
                                         {categoryName}
@@ -304,29 +457,122 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
-                    </>
-                )}
 
-                {isSeeAllView ? (
-                    loadingLatest || loadingPopular ? (
-                        <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
-                    ) : (
-                        <FlatList
-                            data={moviesToDisplayForSeeAll}
-                            renderItem={renderMovieCard}
-                            keyExtractor={(item) => item._id}
-                            numColumns={numColumns}
-                            contentContainerStyle={styles.flatListContent}
-                            scrollEnabled={false} // Nested FlatList should not scroll itself
-                            ListEmptyComponent={
-                                <View style={styles.emptyListContainer}>
-                                    <Text style={styles.emptyListText}>No movies found in this category.</Text>
+                        {/* Toggle Filters Button */}
+                        <TouchableOpacity style={styles.toggleFiltersButton} onPress={() => setShowFilters(!showFilters)}>
+                            <MaterialCommunityIcons name={showFilters ? "filter-remove" : "filter-plus"} size={24} color="#E50914" />
+                            <Text style={styles.toggleFiltersButtonText}>{showFilters ? 'Hide Filters' : 'Show More Filters'}</Text>
+                        </TouchableOpacity>
+
+                        {/* Collapsible Filter Section */}
+                        {showFilters && (
+                            <View style={styles.filterSection}>
+                                <Text style={styles.filterSectionTitle}>Advanced Filters</Text>
+
+                                {/* Search by Name */}
+                                <TextInput
+                                    style={styles.filterInput}
+                                    placeholder="Search by movie title..."
+                                    placeholderTextColor="#A0A0A0"
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    // Removed onEndEditing={fetchFilteredMovies} - now handled by combined useEffect
+                                />
+
+                                {/* Min Rating */}
+                                <TextInput
+                                    style={styles.filterInput}
+                                    placeholder="Minimum rating (0-10)"
+                                    placeholderTextColor="#A0A0A0"
+                                    keyboardType="numeric"
+                                    value={minRating}
+                                    onChangeText={setMinRating}
+                                    // Removed onEndEditing={fetchFilteredMovies} - now handled by combined useEffect
+                                />
+
+                                {/* Year Range */}
+                                <View style={styles.yearRangeContainer}>
+                                    <TextInput
+                                        style={[styles.filterInput, styles.yearInput]}
+                                        placeholder="Start Year"
+                                        placeholderTextColor="#A0A0A0"
+                                        keyboardType="numeric"
+                                        maxLength={4}
+                                        value={startYear}
+                                        onChangeText={setStartYear}
+                                        // Removed onEndEditing={fetchFilteredMovies} - now handled by combined useEffect
+                                    />
+                                    <Text style={styles.yearSeparator}>-</Text>
+                                    <TextInput
+                                        style={[styles.filterInput, styles.yearInput]}
+                                        placeholder="End Year"
+                                        placeholderTextColor="#A0A0A0"
+                                        keyboardType="numeric"
+                                        maxLength={4}
+                                        value={endYear}
+                                        onChangeText={setEndYear}
+                                        // Removed onEndEditing={fetchFilteredMovies} - now handled by combined useEffect
+                                    />
                                 </View>
-                            }
-                        />
-                    )
-                ) : (
-                    <>
+
+                                {/* Sort By */}
+                                <View style={styles.sortContainer}>
+                                    <Text style={styles.sortLabel}>Sort By:</Text>
+                                    <TouchableOpacity
+                                        style={[styles.sortButton, sortBy === 'release_date' && styles.selectedSortButton]}
+                                        onPress={() => { setSortBy('release_date'); }} // This will trigger the dedicated useEffect
+                                    >
+                                        <Text style={[styles.sortButtonText, sortBy === 'release_date' && styles.selectedSortButtonText]}>Date</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.sortButton, sortBy === 'vote_average' && styles.selectedSortButton]}
+                                        onPress={() => { setSortBy('vote_average'); }} // This will trigger the dedicated useEffect
+                                    >
+                                        <Text style={[styles.sortButtonText, sortBy === 'vote_average' && styles.selectedSortButtonText]}>Rating</Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Sort Order */}
+                                <View style={styles.sortContainer}>
+                                    <Text style={styles.sortLabel}>Order:</Text>
+                                    <TouchableOpacity
+                                        style={[styles.sortButton, sortOrder === 'desc' && styles.selectedSortButton]}
+                                        onPress={() => { setSortOrder('desc'); }} // This will trigger the dedicated useEffect
+                                    >
+                                        <Text style={[styles.sortButtonText, sortOrder === 'desc' && styles.selectedSortButtonText]}>Descending</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.sortButton, sortOrder === 'asc' && styles.selectedSortButton]}
+                                        onPress={() => { setSortOrder('asc'); }} // This will trigger the dedicated useEffect
+                                    >
+                                        <Text style={[styles.sortButtonText, sortOrder === 'asc' && styles.selectedSortButtonText]}>Ascending</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Display Filtered Movies section */}
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Filtered Movies</Text>
+                        </View>
+                        {loadingFiltered ? (
+                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                        ) : filteredMovies.length === 0 && !loadingFiltered && (
+                            <View style={styles.emptyListContainer}>
+                                <Text style={styles.emptyListText}>No movies match your filters.</Text>
+                            </View>
+                        )}
+                        {!loadingFiltered && filteredMovies.length > 0 && (
+                            <FlatList
+                                data={filteredMovies}
+                                renderItem={renderMovieCard}
+                                keyExtractor={(item) => item._id}
+                                numColumns={numColumns}
+                                contentContainerStyle={styles.flatListContent}
+                                scrollEnabled={false}
+                            />
+                        )}
+
                         {/* Latest Movies Section */}
                         <View style={styles.sectionHeader}>
                             <Text style={styles.sectionTitle}>Latest Movies</Text>
@@ -378,33 +624,60 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                         )}
                     </>
                 )}
+
+                {isSeeAllView && (
+                    <View style={styles.seeAllContainer}>
+                        <View style={styles.header}>
+                            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                                <Ionicons name="arrow-back" size={24} color="#FFF" />
+                            </TouchableOpacity>
+                            <Text style={styles.seeAllHeaderTitle}>
+                                {route.params?.type === 'latest' ? 'Latest Movies' :
+                                    route.params?.type === 'popular' ? 'Popular Movies' :
+                                        route.params?.category || 'Filtered Movies'}
+                            </Text>
+                        </View>
+
+                        {isLoadingSeeAllContent ? (
+                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                        ) : moviesToDisplayForSeeAll.length === 0 ? (
+                            <View style={styles.emptyListContainer}>
+                                <Text style={styles.emptyListText}>No movies available in this category.</Text>
+                            </View>
+                        ) : (
+                            <FlatList
+                                data={moviesToDisplayForSeeAll}
+                                renderItem={renderMovieCard}
+                                keyExtractor={(item) => item._id}
+                                numColumns={numColumns}
+                                contentContainerStyle={styles.flatListContent}
+                                scrollEnabled={false} // Managed by outer ScrollView
+                            />
+                        )}
+                    </View>
+                )}
             </ScrollView>
         </SafeAreaView>
     );
 };
 
+// ... (your existing styles remain unchanged)
 const styles = StyleSheet.create({
     fullContainer: {
         flex: 1,
-        backgroundColor: '#0A0A0A', // Ensure this covers the entire safe area
+        backgroundColor: '#0A0A0A',
     },
     container: {
         flex: 1,
         backgroundColor: '#0A0A0A',
-        // No explicit padding here, SafeAreaView handles it
-    },
-    loadingIndicator: {
-        marginTop: 50,
-        marginBottom: 50,
+        paddingHorizontal: cardMargin, // Apply horizontal padding to the main container
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
         paddingVertical: 15,
-        backgroundColor: '#1C1C1C',
-        // No paddingTop here, SafeAreaView will push it down
+        // No horizontal padding here, handled by container
     },
     userInfo: {
         flexDirection: 'row',
@@ -415,117 +688,88 @@ const styles = StyleSheet.create({
         height: 40,
         borderRadius: 20,
         marginRight: 10,
-        backgroundColor: '#333',
-        borderWidth: 1,
-        borderColor: '#555',
+        backgroundColor: '#333', // Placeholder color
     },
     welcomeText: {
         color: '#A0A0A0',
         fontSize: 14,
+        fontFamily: 'Montserrat_400Regular',
     },
     userName: {
         color: '#FFF',
         fontSize: 18,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_600SemiBold',
     },
     searchIconContainer: {
-        padding: 5,
+        padding: 8,
     },
     discoverTitle: {
         color: '#FFF',
-        fontSize: 30,
-        fontWeight: 'bold',
-        paddingHorizontal: 20,
-        paddingTop: 20,
+        fontSize: 28,
+        fontFamily: 'Montserrat_700Bold',
         marginBottom: 20,
-    },
-    categoryFilterContainer: {
-        marginBottom: 20,
-    },
-    categoryFilterContent: {
-        paddingHorizontal: 20,
-    },
-    categoryButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 15,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#333',
-        marginRight: 10,
-        backgroundColor: '#222',
-    },
-    selectedCategoryButton: {
-        backgroundColor: '#E50914',
-        borderColor: '#E50914',
-    },
-    categoryButtonText: {
-        color: '#FFF',
-        fontSize: 14,
-        fontWeight: 'bold',
-    },
-    selectedCategoryButtonText: {
-        color: '#FFF',
+        lineHeight: 36,
+        // No horizontal padding
     },
     sectionHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        marginTop: 20,
         marginBottom: 15,
+        marginTop: 25,
     },
     sectionTitle: {
         color: '#FFF',
-        fontSize: 22,
-        fontWeight: 'bold',
+        fontSize: 20,
+        fontFamily: 'Montserrat_600SemiBold',
     },
     seeAllText: {
         color: '#E50914',
         fontSize: 16,
-        fontWeight: 'bold',
+        fontFamily: 'Montserrat_500Medium',
+    },
+    loadingIndicator: {
+        paddingVertical: 20,
     },
     horizontalMovieList: {
-        paddingHorizontal: 15,
-        paddingBottom: 15,
+        paddingRight: cardMargin, // Ensure last item has correct margin
     },
     movieCardHorizontal: {
-        width: 120, // Adjust size for horizontal cards
-        marginHorizontal: 5,
-        alignItems: 'flex-start',
-        marginBottom: 10,
+        width: 120,
+        marginRight: 15,
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#1E1E1E',
+        marginBottom: 10, // Add some bottom margin for spacing if multiple rows appear (unlikely in horizontal)
     },
     movieCardVertical: {
-        marginHorizontal: cardMargin / 2,
+        marginHorizontal: cardMargin / 2, // Half margin for vertical list to ensure even spacing
         marginBottom: cardMargin,
-        alignItems: 'flex-start',
+        borderRadius: 10,
+        overflow: 'hidden',
+        backgroundColor: '#1E1E1E',
     },
     moviePoster: {
         width: '100%',
-        height: 180, // Aspect ratio 2:3 for posters
+        height: 180, // Adjust height as needed
         borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#333',
-        backgroundColor: '#333',
-        marginBottom: 8,
     },
     movieTitleCard: {
         color: '#FFF',
+        fontFamily: 'Montserrat_500Medium',
         fontSize: 14,
-        fontWeight: 'bold',
-        textAlign: 'left',
-        width: '100%',
-        height: 40, // Fixed height for two lines
+        marginTop: 8,
+        paddingHorizontal: 8,
+        textAlign: 'center',
     },
     movieInfoCard: {
         color: '#A0A0A0',
+        fontFamily: 'Montserrat_400Regular',
         fontSize: 12,
-        textAlign: 'left',
-        width: '100%',
-    },
-    flatListContent: {
-        paddingHorizontal: cardMargin / 2,
-        paddingBottom: Platform.OS === 'ios' ? 0 : 20, // Add padding bottom for Android in See All view
-        justifyContent: 'flex-start',
+        marginTop: 4,
+        marginBottom: 8,
+        paddingHorizontal: 8,
+        textAlign: 'center',
     },
     emptyListContainer: {
         flex: 1,
@@ -533,16 +777,147 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 50,
     },
+    emptyHorizontalListContainer: {
+        paddingHorizontal: 15,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     emptyListText: {
         color: '#A0A0A0',
         fontSize: 16,
+        fontFamily: 'Montserrat_500Medium',
+        textAlign: 'center',
     },
-    emptyHorizontalListContainer: {
-        width: Dimensions.get('window').width - 40, // Take up most of the screen width
-        justifyContent: 'center',
+    seeAllContainer: {
+        flex: 1,
+        // No padding here, handled by internal FlatList contentContainerStyle
+    },
+    backButton: {
+        padding: 5,
+        marginRight: 10,
+    },
+    seeAllHeaderTitle: {
+        color: '#FFF',
+        fontSize: 22,
+        fontFamily: 'Montserrat_700Bold',
+        flex: 1, // Allows title to take available space
+    },
+    flatListContent: {
+        paddingHorizontal: cardMargin / 2, // Half margin for vertical list to ensure even spacing
+    },
+    categoryFilterContainer: {
+        marginBottom: 20,
+    },
+    categoryFilterContent: {
+        paddingRight: 10, // Padding at the end of the horizontal scroll
+    },
+    categoryButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 15,
+        borderRadius: 20,
+        backgroundColor: '#333',
+        marginRight: 10,
+    },
+    selectedCategoryButton: {
+        backgroundColor: '#E50914',
+    },
+    categoryButtonText: {
+        color: '#FFF',
+        fontFamily: 'Montserrat_500Medium',
+        fontSize: 14,
+    },
+    selectedCategoryButtonText: {
+        color: '#FFF',
+    },
+    toggleFiltersButton: {
+        flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 20,
-    }
+        justifyContent: 'center',
+        paddingVertical: 10,
+        marginBottom: 20,
+        borderRadius: 8,
+        backgroundColor: '#1A1A1A',
+        borderColor: '#333',
+        borderWidth: 1,
+    },
+    toggleFiltersButtonText: {
+        color: '#E50914',
+        fontFamily: 'Montserrat_600SemiBold',
+        marginLeft: 8,
+        fontSize: 16,
+    },
+    filterSection: {
+        backgroundColor: '#1A1A1A',
+        borderRadius: 10,
+        padding: 15,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: '#333',
+    },
+    filterSectionTitle: {
+        color: '#FFF',
+        fontSize: 18,
+        fontFamily: 'Montserrat_600SemiBold',
+        marginBottom: 15,
+        textAlign: 'center',
+    },
+    filterInput: {
+        backgroundColor: '#0A0A0A',
+        color: '#FFF',
+        fontFamily: 'Montserrat_400Regular',
+        borderRadius: 8,
+        paddingHorizontal: 15,
+        paddingVertical: 12,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#333',
+        fontSize: 16,
+    },
+    yearRangeContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    yearInput: {
+        flex: 1,
+        marginHorizontal: 5,
+    },
+    yearSeparator: {
+        color: '#FFF',
+        fontSize: 20,
+        fontFamily: 'Montserrat_500Medium',
+        marginHorizontal: 5,
+    },
+    sortContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    sortLabel: {
+        color: '#FFF',
+        fontFamily: 'Montserrat_500Medium',
+        fontSize: 16,
+        marginRight: 10,
+    },
+    sortButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+        backgroundColor: '#333',
+        marginRight: 10,
+    },
+    selectedSortButton: {
+        backgroundColor: '#E50914',
+    },
+    sortButtonText: {
+        color: '#FFF',
+        fontFamily: 'Montserrat_500Medium',
+        fontSize: 14,
+    },
+    selectedSortButtonText: {
+        color: '#FFF',
+    },
 });
 
 export default MovieListScreen;
