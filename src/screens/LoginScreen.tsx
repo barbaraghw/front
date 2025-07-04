@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Alert,
   Image,
-  ActivityIndicator 
+  ActivityIndicator
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList, BottomTabParamList } from '../../App';
@@ -18,14 +18,12 @@ import { LoginResponse, ErrorResponse } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-
-
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
 
 const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false); 
+  const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -37,34 +35,34 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     try {
       // Make the login API call
       const response = await axios.post<LoginResponse>(`${API_URL}/auth/login`, { email, password });
-      
+
       // Store the authentication token
       await AsyncStorage.setItem('userToken', response.data.token);
-      
+
       // *** NEW/MODIFIED: Store the username from the response ***
       if (response.data.user && response.data.user.username) {
         await AsyncStorage.setItem('userName', response.data.user.username);
         console.log('Username stored:', response.data.user.username); // For debugging
       } else {
-    // Fallback if username is not directly in the login response user object
-    // (though we just fixed the backend for this, so this case should be rare now)
-    if (response.data.user && response.data.user.email) {
-        // As a last resort, if backend doesn't send username but has email,
-        // you might derive a username or just save the email temporarily
-        await AsyncStorage.setItem('userName', response.data.user.email.split('@')[0]);
-        console.warn('Username not in response, used email prefix as fallback.');
-    } else {
-        console.warn('Login response did not contain user data for username.');
-    }
-}
+        // Fallback if username is not directly in the login response user object
+        // (though we just fixed the backend for this, so this case should be rare now)
+        if (response.data.user && response.data.user.email) {
+          // As a last resort, if backend doesn't send username but has email,
+          // you might derive a username or just save the email temporarily
+          await AsyncStorage.setItem('userName', response.data.user.email.split('@')[0]);
+          console.warn('Username not in response, used email prefix as fallback.');
+        } else {
+          console.warn('Login response did not contain user data for username.');
+        }
+      }
 
       Alert.alert('Éxito', '¡Inicio de sesión exitoso!');
-      
+
       // Navigate to the MainTabs navigator, specifically to the 'MovieList' tab
       // The 'MovieList' string MUST match the 'name' property of the Tab.Screen in App.tsx
       navigation.navigate('MainTabs', {
         screen: 'Movies', // Directs to the 'MovieList' tab within 'MainTabs'
-      }); 
+      });
 
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
@@ -90,7 +88,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       <TextInput
         style={styles.input}
         placeholder="Email"
-        placeholderTextColor="#888"
+        placeholderTextColor="#BBB" // Cambiado a un gris claro para el placeholder
         keyboardType="email-address"
         autoCapitalize="none"
         value={email}
@@ -99,13 +97,17 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
       <TextInput
         style={styles.input}
         placeholder="Password"
-        placeholderTextColor="#888"
+        placeholderTextColor="#BBB" // Cambiado a un gris claro para el placeholder
         secureTextEntry
         value={password}
         onChangeText={setPassword}
       />
       <TouchableOpacity style={styles.primaryButton} onPress={handleLogin}>
-        <Text style={styles.primaryButtonText}>Sign In</Text>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.primaryButtonText}>Sign In</Text>
+        )}
       </TouchableOpacity>
 
       <View style={styles.signUpTextContainer}>
@@ -123,7 +125,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#000', // Cambiado a negro
     paddingHorizontal: 30,
   },
   logo: {
@@ -136,19 +138,19 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 30,
-    color: '#333',
+    color: '#FFF', // Cambiado a blanco
   },
   input: {
     width: '100%',
     height: 50,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#333', // Fondo del input a gris oscuro
     borderRadius: 10,
     paddingHorizontal: 15,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#555', // Borde del input a gris
     fontSize: 16,
-    color: '#333',
+    color: '#FFF', // Texto del input a blanco
   },
   primaryButton: {
     width: '100%',
@@ -158,7 +160,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
-    marginBottom: 30, // Reducir o ajustar el margen inferior si no hay más elementos
+    marginBottom: 30,
   },
   primaryButtonText: {
     color: '#fff',
@@ -167,14 +169,14 @@ const styles = StyleSheet.create({
   },
   signUpTextContainer: {
     flexDirection: 'row',
-    marginTop: 20, // Ajusta el margen superior
+    marginTop: 20,
   },
   signUpText: {
-    color: '#333',
+    color: '#FFF', // Cambiado a blanco
     fontSize: 16,
   },
   signUpLink: {
-    color: '#1E3A8A',
+    color: '#1E3A8A', // Mantenido azul para contraste, puedes ajustar si prefieres.
     fontSize: 16,
     fontWeight: 'bold',
   },

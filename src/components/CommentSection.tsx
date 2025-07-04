@@ -3,13 +3,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
-    TextInput, // Keep TextInput import if still used for rating input, but not for the main comment text
+    TextInput,
     TouchableOpacity,
     StyleSheet,
     FlatList,
     ActivityIndicator,
     Alert,
-    KeyboardAvoidingView, // Keep if still needed for list, but less critical without direct input
+    KeyboardAvoidingView,
     Platform,
     Image,
 } from 'react-native';
@@ -27,7 +27,7 @@ export interface CommentUser {
 
 export interface ICommentClient {
     _id: string;
-    user: CommentUser;
+    user: CommentUser | null; // MODIFICADO: Permite que 'user' sea null
     movie: string;
     text: string;
     rating: number; // Rating is 1-10
@@ -74,12 +74,16 @@ const CommentSection: React.FC<CommentSectionProps> = ({
 
             // <--- INICIO DE MODIFICACIÓN: Lógica de ordenamiento para críticos ---
             fetchedComments.sort((a, b) => {
+                // MODIFICADO: Añadir verificación para 'a.user' y 'b.user'
+                const aIsCritic = a.user?.isCritic || false;
+                const bIsCritic = b.user?.isCritic || false;
+
                 // Priorizar críticos: si 'a' es crítico y 'b' no, 'a' va primero.
-                if (a.user.isCritic && !b.user.isCritic) {
+                if (aIsCritic && !bIsCritic) {
                     return -1;
                 }
                 // Si 'b' es crítico y 'a' no, 'b' va primero.
-                if (!a.user.isCritic && b.user.isCritic) {
+                if (!aIsCritic && bIsCritic) {
                     return 1;
                 }
                 // Si ambos son críticos o ninguno lo es, ordenar por fecha (más reciente primero)
@@ -112,14 +116,20 @@ const CommentSection: React.FC<CommentSectionProps> = ({
         if (activeTab === 'everyone') {
             return true;
         } else {
-            return currentUserAuthId && comment.user._id === currentUserAuthId;
+            // MODIFICADO: Añadir verificación para 'comment.user'
+            return currentUserAuthId && comment.user && comment.user._id === currentUserAuthId;
         }
     });
 
     // REMOVED: handleRatingChange and handleSubmitComment as they are part of add/edit
     // The handleEdit function now calls the prop provided by CommentsScreen
     const handleEdit = (comment: ICommentClient) => {
-        onEditComment(comment._id, comment.text, comment.rating);
+        // MODIFICADO: Asegurarse de que comment.user no sea null antes de llamar onEditComment
+        if (comment.user) {
+            onEditComment(comment._id, comment.text, comment.rating);
+        } else {
+            Alert.alert('Error', 'Cannot edit a comment from an unknown user.');
+        }
     };
 
     const handleDelete = async (commentId: string) => {
@@ -158,62 +168,67 @@ const CommentSection: React.FC<CommentSectionProps> = ({
     };
 
     const renderStars = (rating: number) => {
-    // AÑADE ESTE LOG para depurar si el rating llega correctamente a este componente
-    // console.log('[DEBUG CommentSection] Rating recibido para renderizar:', rating);
+        // AÑADE ESTE LOG para depurar si el rating llega correctamente a este componente
+        // console.log('[DEBUG CommentSection] Rating recibido para renderizar:', rating);
 
-    const stars = [];
-    // La CLAVE: Usar Math.round(rating * 2) / 2 para manejar ratings enteros y con .5
-    // Esto asegura que un rating de 1 se trate como 1.0, y 3 como 3.0.
-    // Si en el futuro recibes 3.5, también lo manejará correctamente.
-    // Ajusta la calificación a una escala de 1-5 si tu diseño de estrellas es de 5
-    // Si tu rating es de 1-10, divídelo entre 2 para la visualización de 5 estrellas
-    const displayRating = (Math.round(rating * 2) / 2); // (rating 1-10) -> (displayRating 0.5-5)
+        const stars = [];
+        // La CLAVE: Usar Math.round(rating * 2) / 2 para manejar ratings enteros y con .5
+        // Esto asegura que un rating de 1 se trate como 1.0, y 3 como 3.0.
+        // Si en el futuro recibes 3.5, también lo manejará correctamente.
+        // Ajusta la calificación a una escala de 1-5 si tu diseño de estrellas es de 5
+        // Si tu rating es de 1-10, divídelo entre 2 para la visualización de 5 estrellas
+        const displayRating = (Math.round(rating * 2) / 2); // (rating 1-10) -> (displayRating 0.5-5)
 
-    for (let i = 1; i <= 5; i++) {
-        let iconName: 'star' | 'star-half' | 'star-outline';
-        let iconColor = '#FFD700'; // Color para estrellas llenas/medias
+        for (let i = 1; i <= 5; i++) {
+            let iconName: 'star' | 'star-half' | 'star-outline';
+            let iconColor = '#FFD700'; // Color para estrellas llenas/medias
 
-        if (displayRating >= i) {
-            iconName = 'star';
-        } else if (displayRating >= (i - 0.5)) {
-            iconName = 'star-half';
-        } else {
-            iconName = 'star-outline';
-            iconColor = '#A0A0A0'; // Color para estrellas vacías
+            if (displayRating >= i) {
+                iconName = 'star';
+            } else if (displayRating >= (i - 0.5)) {
+                iconName = 'star-half';
+            } else {
+                iconName = 'star-outline';
+                iconColor = '#A0A0A0'; // Color para estrellas vacías
+            }
+            stars.push(
+                <Ionicons
+                    key={i}
+                    name={iconName}
+                    size={16} // Mantén el tamaño para comentarios
+                    color={iconColor}
+                />
+            );
         }
-        stars.push(
-            <Ionicons
-                key={i}
-                name={iconName}
-                size={16} // Mantén el tamaño para comentarios
-                color={iconColor}
-            />
-        );
-    }
-    return <View style={styles.starsContainer}>{stars}</View>;
-};
+        return <View style={styles.starsContainer}>{stars}</View>;
+    };
     const renderComment = ({ item }: { item: ICommentClient }) => {
-        console.log(`[DEBUG CommentSection] Comment from ${item.user.username}, isCritic: ${item.user.isCritic}, Rating: ${item.rating}`);
-        const isMyComment = currentUserAuthId && item.user._id === currentUserAuthId;
-        const userAvatar = item.user.avatar || 'https://via.placeholder.com/40/222222/FFFFFF?text=AV';
+        // MODIFICADO: Usar el operador opcional chaining `?.` y el operador nullish coalescing `??` o `||`
+        // para manejar el caso donde item.user puede ser null.
+        console.log(`[DEBUG CommentSection] Comment from ${item.user?.username || 'Unknown User'}, isCritic: ${item.user?.isCritic ?? false}, Rating: ${item.rating}`);
+
+        const isMyComment = currentUserAuthId && item.user?._id === currentUserAuthId;
+        const userAvatar = item.user?.avatar || 'https://via.placeholder.com/40/222222/FFFFFF?text=AV';
+        const username = item.user?.username || 'Usuario Desconocido';
+        const isCritic = item.user?.isCritic || false; // Asume false si item.user es null o isCritic no está definido
 
         return (
-        <View style={[
-            styles.commentCard,
-            item.user.isCritic && styles.criticCommentCard // Aplica estilo dorado si es crítico
-        ]}>
-            {/* <--- FIN DE MODIFICACIÓN: Aplicar estilo de crítico condicionalmente --- */}
+            <View style={[
+                styles.commentCard,
+                isCritic && styles.criticCommentCard // Aplica estilo dorado si es crítico
+            ]}>
+                {/* <--- FIN DE MODIFICACIÓN: Aplicar estilo de crítico condicionalmente --- */}
                 <View style={styles.commentHeader}>
                     <Image source={{ uri: userAvatar }} style={styles.avatar} />
                     <View style={styles.commentUserInfo}>
-                        <Text style={styles.commentUsername}>{item.user.username}</Text>
-                        {/* <--- INICIO DE MODIFICACIÓN: Mostrar tag "CRITICO" --- */}
-                        {item.user.isCritic && (
-                            <View style={styles.criticTag}>
-                                 <Text style={styles.criticTagText}>CRÍTICO</Text>
-                            </View>
-                        )}
-                        {/* <--- FIN DE MODIFICACIÓN: Mostrar tag "CRITICO" --- */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+                            <Text style={styles.commentUsername}>{username}</Text>
+                            {isCritic && (
+                                <View style={styles.criticTag}>
+                                    <Text style={styles.criticTagText}>CRÍTICO</Text>
+                                </View>
+                            )}
+                        </View>
                         {renderStars(item.rating)}
                     </View>
                     {isMyComment && (
@@ -245,7 +260,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.fullWidthContainer}
-            // keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} // No longer needed for input here
+        // keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} // No longer needed for input here
         >
             <View style={styles.commentSectionContainer}>
                 {/* Tabs */}

@@ -58,7 +58,7 @@ const windowWidth = Dimensions.get('window').width;
 const numColumns = 2;
 const cardMargin = 15;
 const cardWidth = (windowWidth - (numColumns + 1) * cardMargin) / numColumns;
-
+const verticalCardMargin = 10;
 const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) => {
     const rootStackNavigation = navigation as NativeStackNavigationProp<RootStackParamList>;
     const [userName, setUserName] = useState<string | null>(null);
@@ -221,7 +221,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
 
     // Ref to prevent unnecessary re-fetches when navigating back to 'MovieList' with same params
     // For the main Movies tab, we'll use a boolean to indicate initial load
-    const initialMovieListLoadRef = useRef<{ type?: string; category?: string; genreId?: number } | boolean>(false); // Changed to boolean for main tab
+       const initialMovieListLoadRef = useRef<{ type?: string; category?: string; genreId?: number } | boolean>(false); // Changed to boolean for main tab
 
     // useFocusEffect for initial data load based on route (main tab or 'See All' screen)
     useFocusEffect(
@@ -240,39 +240,44 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
             );
 
             // Logic for 'MovieList' (See All) screens
-            if (isMovieListRoute && currentRouteParams && (hasRouteParamsChanged || typeof initialMovieListLoadRef.current === 'boolean')) {
-                console.log(`[DEBUG] MovieList route focus effect triggered with params change or initial load.`);
-                setLatestMovies([]); // Clear other lists
-                setPopularMovies([]);
+            if (isMovieListRoute && currentRouteParams) {
+                // Only proceed if params have changed or it's an initial load for this specific MovieList type
+                if (hasRouteParamsChanged || typeof initialMovieListLoadRef.current === 'boolean') {
+                    console.log(`[DEBUG] MovieList route focus effect triggered with params change or initial load.`);
+                    setLatestMovies([]); // Clear other lists
+                    setPopularMovies([]);
+                    setFilteredMovies([]); // Also clear filtered movies if navigating to specific type list
 
-                if (currentRouteParams.type === 'latest') {
-                    fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
-                } else if (currentRouteParams.type === 'popular') {
-                    fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
-                } else { // Handle 'category' or 'genre' or generic 'MovieList'
-                    const genreNameFromParam = currentRouteParams.category || genres.find(g => g.id === currentRouteParams.genreId)?.name;
-                    if (genreNameFromParam) {
-                        setSelectedGenreName(genreNameFromParam);
-                    } else {
-                        setSelectedGenreName('All');
+                    if (currentRouteParams.type === 'latest') {
+                        fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
+                    } else if (currentRouteParams.type === 'popular') {
+                        fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
+                    } else { // Handle 'category' or 'genre' or generic 'MovieList' for filtered content
+                        const genreNameFromParam = currentRouteParams.category || genres.find(g => g.id === currentRouteParams.genreId)?.name;
+                        if (genreNameFromParam) {
+                            setSelectedGenreName(genreNameFromParam);
+                        } else {
+                            setSelectedGenreName('All');
+                        }
+                        // Do NOT call fetchFilteredMovies() here. The combined useEffect below will handle it
+                        // when selectedGenreName or other filter states change.
                     }
-                    // For category/genre see all, trigger fetch filtered movies right away
-                    // since the genre state has been updated.
-                    // IMPORTANT: This 'fetchFilteredMovies()' call here will trigger the combined useEffect below,
-                    // so we don't need to explicitly call it here. The state changes will take care of it.
-                    // fetchFilteredMovies(); // <--- REMOVE THIS LINE
+                    // Update the ref to prevent re-fetching on subsequent identical focuses
+                    initialMovieListLoadRef.current = {
+                        type: currentRouteParams.type,
+                        category: currentRouteParams.category,
+                        genreId: currentRouteParams.genreId
+                    };
+                } else {
+                    console.log(`[DEBUG] MovieList route focus effect triggered, but params are same. Not refetching.`);
                 }
-                // Update the ref to prevent re-fetching on subsequent identical focuses
-                initialMovieListLoadRef.current = {
-                    type: currentRouteParams.type,
-                    category: currentRouteParams.category,
-                    genreId: currentRouteParams.genreId
-                };
             } else if (isMainMoviesTab && initialMovieListLoadRef.current === false) { // ONLY fetch on initial mount of main tab
                 console.log(`[DEBUG] Main Movies tab focus effect triggered for initial load.`);
                 fetchMoviesSection('latest', setLatestMovies, setLoadingLatest);
                 fetchMoviesSection('popular', setPopularMovies, setLoadingPopular);
-                // fetchFilteredMovies(); // <--- REMOVE THIS LINE - the combined useEffect will handle this based on default filter states
+                // fetchFilteredMovies(); // <--- This was commented out before, keeping it that way.
+                                         // The combined useEffect below will handle fetching filtered movies
+                                         // based on default filter states for the main tab.
                 initialMovieListLoadRef.current = true; // Mark as loaded for main tab
             } else {
                 console.log(`[DEBUG] Focus effect triggered, but no relevant route change or initial load for current view.`);
@@ -284,17 +289,10 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                 // with potentially different params (e.g., if you navigate to another MovieList)
                 // For the main tab, we don't reset it to false here, as its initial load is persistent.
                 if (isMovieListRoute) {
-                    initialMovieListLoadRef.current = false; // Reset to boolean for MovieList route when leaving
+                    initialMovieListLoadRef.current = false; // Reset to false for MovieList route when leaving
                 }
             };
         }, [
-            route,
-            fetchAndSetUserName,
-            fetchMoviesSection,
-            // fetchFilteredMovies, // REMOVE THIS as it will now be managed by the combined useEffect below
-            genres,
-            // selectedGenreName is not a dependency here to avoid loop if changed by route params
-            // It's intentionally excluded because setSelectedGenreName is called within this effect
         ])
     );
 
@@ -306,8 +304,9 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
         const isMovieListRoute = ('name' in route && route.name === 'MovieList');
         const currentRouteParams = isMovieListRoute ? (route.params as RootStackParamList['MovieList']) : null;
 
-        // If it's the main movies tab OR it's a MovieList route displaying filtered content
-        // (i.e., not 'latest' or 'popular' specific lists)
+        // Condition to decide if filtered movies should be fetched:
+        // 1. It's the main 'Movies' tab.
+        // 2. OR it's the 'MovieList' route, AND it's NOT a 'latest' or 'popular' specific list.
         const shouldFetchFiltered = isMainMoviesTab || (isMovieListRoute && !currentRouteParams?.type);
 
         if (shouldFetchFiltered) {
@@ -317,6 +316,8 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
             }, 300); // Debounce for 300ms
 
             return () => clearTimeout(handler);
+        } else {
+            console.log(`[DEBUG] Not fetching filtered movies: isMainMoviesTab=${isMainMoviesTab}, isMovieListRoute=${isMovieListRoute}, currentRouteParams?.type=${currentRouteParams?.type}`);
         }
     }, [
         searchQuery,
@@ -460,7 +461,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
 
                         {/* Toggle Filters Button */}
                         <TouchableOpacity style={styles.toggleFiltersButton} onPress={() => setShowFilters(!showFilters)}>
-                            <MaterialCommunityIcons name={showFilters ? "filter-remove" : "filter-plus"} size={24} color="#E50914" />
+                            <MaterialCommunityIcons name={showFilters ? "filter-remove" : "filter-plus"} size={24} color="#4ADE80" />
                             <Text style={styles.toggleFiltersButtonText}>{showFilters ? 'Hide Filters' : 'Show More Filters'}</Text>
                         </TouchableOpacity>
 
@@ -556,7 +557,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                             <Text style={styles.sectionTitle}>Filtered Movies</Text>
                         </View>
                         {loadingFiltered ? (
-                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                            <ActivityIndicator size="large" color="#4ADE80" style={styles.loadingIndicator} />
                         ) : filteredMovies.length === 0 && !loadingFiltered && (
                             <View style={styles.emptyListContainer}>
                                 <Text style={styles.emptyListText}>No movies match your filters.</Text>
@@ -581,7 +582,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                             </TouchableOpacity>
                         </View>
                         {loadingLatest ? (
-                            <ActivityIndicator size="small" color="#E50914" style={styles.loadingIndicator} />
+                            <ActivityIndicator size="small" color="#4ADE80" style={styles.loadingIndicator} />
                         ) : (
                             <FlatList
                                 data={latestMovies}
@@ -606,7 +607,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                             </TouchableOpacity>
                         </View>
                         {loadingPopular ? (
-                            <ActivityIndicator size="small" color="#E50914" style={styles.loadingIndicator} />
+                            <ActivityIndicator size="small" color="#4ADE80" style={styles.loadingIndicator} />
                         ) : (
                             <FlatList
                                 data={popularMovies}
@@ -639,7 +640,7 @@ const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) 
                         </View>
 
                         {isLoadingSeeAllContent ? (
-                            <ActivityIndicator size="large" color="#E50914" style={styles.loadingIndicator} />
+                            <ActivityIndicator size="large" color="#4ADE80" style={styles.loadingIndicator} />
                         ) : moviesToDisplayForSeeAll.length === 0 ? (
                             <View style={styles.emptyListContainer}>
                                 <Text style={styles.emptyListText}>No movies available in this category.</Text>
@@ -724,7 +725,7 @@ const styles = StyleSheet.create({
         fontFamily: 'Montserrat_600SemiBold',
     },
     seeAllText: {
-        color: '#E50914',
+        color: '#4ADE80',
         fontSize: 16,
         fontFamily: 'Montserrat_500Medium',
     },
@@ -735,24 +736,42 @@ const styles = StyleSheet.create({
         paddingRight: cardMargin, // Ensure last item has correct margin
     },
     movieCardHorizontal: {
-        width: 120,
-        marginRight: 15,
-        borderRadius: 10,
+        backgroundColor: '#1A1A1A',
+        borderRadius: 12, // Aumentado ligeramente
+        marginRight: 20,
+        marginVertical: verticalCardMargin,
+        width: 145, // Aumentado para que sea un poco más ancho
+        height: 250, // Aumentado para que sea más grueso
         overflow: 'hidden',
-        backgroundColor: '#1E1E1E',
-        marginBottom: 10, // Add some bottom margin for spacing if multiple rows appear (unlikely in horizontal)
+        alignItems: 'center',
+        paddingBottom: 10, // Espacio para el texto
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
+        elevation: 8,
     },
-    movieCardVertical: {
-        marginHorizontal: cardMargin / 2, // Half margin for vertical list to ensure even spacing
-        marginBottom: cardMargin,
-        borderRadius: 10,
+     movieCardVertical: {
+        backgroundColor: '#1A1A1A',
+        borderRadius: 12, // Aumentado ligeramente
+        margin: cardMargin / 2, // Half margin for FlatList item spacing
+        width: cardWidth,
+        marginVertical: verticalCardMargin,
+        height: 320, // Aumentado para que sea más grueso en la vista "See All"
         overflow: 'hidden',
-        backgroundColor: '#1E1E1E',
+        alignItems: 'center',
+        paddingBottom: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 6,
+        elevation: 8,
     },
     moviePoster: {
         width: '100%',
-        height: 180, // Adjust height as needed
-        borderRadius: 8,
+        height: '75%', // Ajustado para dejar espacio al texto, puedes jugar con este valor
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
     },
     movieTitleCard: {
         color: '#FFF',
@@ -819,7 +838,7 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     selectedCategoryButton: {
-        backgroundColor: '#E50914',
+        backgroundColor: '#4ADE80',
     },
     categoryButtonText: {
         color: '#FFF',
@@ -841,7 +860,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
     },
     toggleFiltersButtonText: {
-        color: '#E50914',
+        color: '#4ADE80',
         fontFamily: 'Montserrat_600SemiBold',
         marginLeft: 8,
         fontSize: 16,
@@ -908,7 +927,7 @@ const styles = StyleSheet.create({
         marginRight: 10,
     },
     selectedSortButton: {
-        backgroundColor: '#E50914',
+        backgroundColor: '#4ADE80',
     },
     sortButtonText: {
         color: '#FFF',

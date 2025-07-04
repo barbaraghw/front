@@ -17,6 +17,7 @@ import { RootStackParamList } from '../../App'; // Ensure this path is correct
 import axios from 'axios';
 import type { AxiosError } from 'axios';
 import { RegisterResponse, ErrorResponse } from '../types/api'; // Ensure this path is correct
+import { Ionicons } from '@expo/vector-icons';
 
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
@@ -112,7 +113,7 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
     <View style={styles.container}>
       {/* Botón de retroceso (flecha) */}
       <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-        <Text style={styles.backButtonText}>←</Text>
+        <Ionicons name="arrow-back" size={30} color="#fff" /> {/* <-- CAMBIO AQUÍ */}
       </TouchableOpacity>
 
       {/* Logo de la aplicación */}
@@ -287,7 +288,7 @@ const styles = StyleSheet.create({
   primaryButton: {
     width: '100%',
     height: 50,
-    backgroundColor: '#E50914', // Tu color principal de botón
+    backgroundColor: '#1E3A8A', // Tu color principal de botón
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',

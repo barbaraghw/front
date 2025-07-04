@@ -9,7 +9,7 @@ import {
     ActivityIndicator,
     Modal,
     Pressable,
-    SafeAreaView // Importar SafeAreaView
+    SafeAreaView
 } from 'react-native';
 
 import { CompositeScreenProps } from '@react-navigation/native';
@@ -42,8 +42,12 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
     const [newPassword, setNewPassword] = useState('');
     const [confirmNewPassword, setConfirmNewPassword] = useState('');
     const [loading, setLoading] = useState(true);
+
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [deletePassword, setDeletePassword] = useState('');
+
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [updatePasswordConfirm, setUpdatePasswordConfirm] = useState('');
 
     const fetchUserProfile = useCallback(async () => {
         setLoading(true);
@@ -76,11 +80,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
         fetchUserProfile();
     }, [fetchUserProfile]);
 
-    const handleUpdateProfile = async () => {
-        if (!currentPassword) {
-            Alert.alert('Error', 'Por favor, introduce tu contraseña actual para confirmar los cambios.');
-            return;
-        }
+    const handleUpdateProfilePress = () => {
         if (newPassword && newPassword !== confirmNewPassword) {
             Alert.alert('Error', 'Las nuevas contraseñas no coinciden.');
             return;
@@ -94,7 +94,18 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
             return;
         }
 
+        setUpdatePasswordConfirm('');
+        setShowUpdateModal(true);
+    };
+
+    const confirmUpdateProfile = async () => {
+        if (!updatePasswordConfirm) {
+            Alert.alert('Error', 'La contraseña actual es requerida para actualizar el perfil.');
+            return;
+        }
+
         setLoading(true);
+        setShowUpdateModal(false);
         try {
             const token = await AsyncStorage.getItem('userToken');
             if (!token) {
@@ -103,7 +114,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                 return;
             }
 
-            const updateData: any = { password: currentPassword };
+            const updateData: any = { password: updatePasswordConfirm };
 
             if (newEmail !== user?.email) {
                 updateData.email = newEmail;
@@ -122,6 +133,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
             setCurrentPassword('');
             setNewPassword('');
             setConfirmNewPassword('');
+            setUpdatePasswordConfirm('');
         } catch (error) {
             const axiosError = error as AxiosError<ErrorResponse>;
             Alert.alert('Error', axiosError.response?.data?.message || 'Error al actualizar el perfil.');
@@ -197,7 +209,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
 
     if (loading) {
         return (
-            <SafeAreaView style={styles.container}> {/* Wrapped with SafeAreaView */}
+            <SafeAreaView style={styles.container}>
                 <ActivityIndicator size="large" color="#4ADE80" />
                 <Text style={styles.loadingText}>Cargando perfil...</Text>
             </SafeAreaView>
@@ -205,12 +217,18 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
     }
 
     return (
-        <SafeAreaView style={styles.container}> {/* Wrapped with SafeAreaView */}
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                <Text style={styles.backButtonText}>←</Text>
-            </TouchableOpacity>
+        <SafeAreaView style={styles.container}>
+            {/* Contenedor para el botón de atrás y el título */}
+            <View style={styles.headerContainer}>
+                {/* Botón de Atrás con icono de flecha */}
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                    <Ionicons name="arrow-back" size={30} color="#fff" />
+                </TouchableOpacity>
 
-            <Text style={styles.title}>Gestionar Cuenta</Text>
+                {/* Título alineado verticalmente con el botón de atrás */}
+                <Text style={styles.title}>Gestionar Cuenta</Text>
+            </View>
+
 
             {user && (
                 <View style={styles.profileSection}>
@@ -256,7 +274,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                         onChangeText={setConfirmNewPassword}
                     />
 
-                    <TouchableOpacity style={styles.updateProfileButton} onPress={handleUpdateProfile}>
+                    <TouchableOpacity style={styles.updateProfileButton} onPress={handleUpdateProfilePress}>
                         <Text style={styles.buttonText}>Actualizar Perfil</Text>
                     </TouchableOpacity>
 
@@ -270,6 +288,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                 </View>
             )}
 
+            {/* Modal para Confirmar Eliminación de Cuenta */}
             <Modal
                 animationType="slide"
                 transparent={true}
@@ -293,13 +312,50 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                                 style={[styles.button, styles.buttonClose]}
                                 onPress={() => setShowDeleteModal(false)}
                             >
-                                <Text style={styles.buttonText}>Cancelar</Text>
+                                <Text style={styles.textStyle}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 style={[styles.button, styles.buttonConfirmDelete]}
                                 onPress={confirmDeleteAccount}
                             >
-                                <Text style={styles.buttonText}>Eliminar</Text>
+                                <Text style={styles.textStyle}>Eliminar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Pressable>
+            </Modal>
+
+            {/* Nuevo Modal para Confirmar Actualización de Perfil */}
+            <Modal
+                animationType="slide"
+                transparent={true}
+                visible={showUpdateModal}
+                onRequestClose={() => setShowUpdateModal(false)}
+            >
+                <Pressable style={styles.centeredView} onPress={() => setShowUpdateModal(false)}>
+                    <View style={styles.modalView} onStartShouldSetResponder={() => true}>
+                        <Text style={styles.modalTitle}>Confirmar Actualización de Perfil</Text>
+                        <Text style={styles.modalText}>Por favor, introduce tu contraseña actual para confirmar los cambios.</Text>
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Tu contraseña actual"
+                            placeholderTextColor="#aaa"
+                            secureTextEntry
+                            value={updatePasswordConfirm}
+                            onChangeText={setUpdatePasswordConfirm}
+                        />
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonClose]}
+                                onPress={() => setShowUpdateModal(false)}
+                            >
+                                <Text style={styles.textStyle}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.button, styles.buttonConfirmUpdate]}
+                                onPress={confirmUpdateProfile}
+                            >
+                                <Text style={styles.textStyle}>Confirmar</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -312,40 +368,47 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000', // Black background
+        backgroundColor: '#000',
         paddingHorizontal: 20,
-        // Removed paddingTop from here as SafeAreaView handles it
-        alignItems: 'center',
+        // Eliminado alignItems: 'center' aquí para el headerContainer, se aplicará al profileSection
+    },
+    headerContainer: { // Nuevo contenedor para el botón de atrás y el título
+        flexDirection: 'row',
+        alignItems: 'center', // Alinea verticalmente el ícono y el texto
+        justifyContent: 'center', // Centra el contenido horizontalmente inicialmente
+        width: '100%',
+        marginTop: 20, // Ajusta según la necesidad para el espacio superior
+        marginBottom: 30, // Espacio entre el header y el resto del contenido
+        paddingHorizontal: 10, // Un poco de padding para que el ícono no pegue al borde
     },
     backButton: {
-        position: 'absolute',
-        top: 60, // Keep this for relative positioning from the top of SafeAreaView
-        left: 20,
+        position: 'absolute', // Sigue usando absolute para posicionarlo a la izquierda
+        left: 0, // A la izquierda del headerContainer
+        // top: 0, // No es necesario si se alinea con alignItems: 'center' en headerContainer
         zIndex: 1,
-    },
-    backButtonText: {
-        fontSize: 30,
-        color: '#fff', // White text
+        padding: 5, // Un poco de padding para facilitar el toque
     },
     title: {
         fontSize: 28,
         fontWeight: 'bold',
-        marginBottom: 30,
-        color: '#fff', // White text
-        marginTop: 20, // Add some top margin to account for SafeAreaView padding
+        // marginBottom: 30, // Movido al headerContainer
+        color: '#fff',
+        // marginTop: 20, // Movido al headerContainer
+        textAlign: 'center', // Asegura que el título se centre si hay espacio
+        flex: 1, // Permite que el título ocupe el espacio restante
     },
     loadingText: {
         marginTop: 20,
         fontSize: 18,
-        color: '#fff', // White text
+        color: '#fff',
     },
     profileSection: {
         width: '100%',
-        alignItems: 'center',
+        alignItems: 'center', // Para centrar los inputs y botones
     },
     label: {
         fontSize: 16,
-        color: '#fff', // White text
+        color: '#fff',
         alignSelf: 'flex-start',
         marginBottom: 5,
         marginTop: 10,
@@ -353,8 +416,8 @@ const styles = StyleSheet.create({
     },
     emailDisplay: {
         fontSize: 18,
-        color: '#fff', // White text
-        backgroundColor: '#333', // Darker background for display
+        color: '#fff',
+        backgroundColor: '#333',
         padding: 10,
         borderRadius: 8,
         width: '100%',
@@ -364,19 +427,19 @@ const styles = StyleSheet.create({
     input: {
         width: '100%',
         height: 50,
-        backgroundColor: '#333', // Darker background for input
+        backgroundColor: '#333',
         borderRadius: 10,
         paddingHorizontal: 15,
         marginBottom: 15,
         borderWidth: 1,
-        borderColor: '#555', // Darker border
+        borderColor: '#555',
         fontSize: 16,
-        color: '#fff', // White text
+        color: '#fff',
     },
     updateProfileButton: {
         width: '100%',
         height: 50,
-        backgroundColor: '#4ADE80', // New color for "Actualizar Perfil"
+        backgroundColor: '#4ADE80',
         borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
@@ -386,14 +449,14 @@ const styles = StyleSheet.create({
     logoutButton: {
         width: '100%',
         height: 50,
-        backgroundColor: '#1E3A8A', // Original color of "Actualizar Perfil"
+        backgroundColor: '#1E3A8A',
         borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
         marginTop: 10,
         marginBottom: 10,
     },
-    buttonText: { // Reused for all main buttons
+    buttonText: {
         color: '#fff',
         fontSize: 18,
         fontWeight: 'bold',
@@ -412,11 +475,11 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: 'rgba(0,0,0,0.7)', // Darker semi-transparent background for modal
+        backgroundColor: 'rgba(0,0,0,0.7)',
     },
     modalView: {
         margin: 20,
-        backgroundColor: '#222', // Darker modal background
+        backgroundColor: '#222',
         borderRadius: 20,
         padding: 35,
         alignItems: 'center',
@@ -435,13 +498,13 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#fff', // White text
+        color: '#fff',
     },
     modalText: {
         marginBottom: 15,
         textAlign: 'center',
         fontSize: 16,
-        color: '#ccc', // Lighter grey for modal text
+        color: '#ccc',
     },
     modalButtons: {
         flexDirection: 'row',
@@ -457,12 +520,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     buttonClose: {
-        backgroundColor: '#6B7280', // Grey
+        backgroundColor: '#6B7280',
     },
     buttonConfirmDelete: {
-        backgroundColor: '#DC2626', // Red
+        backgroundColor: '#DC2626',
     },
-    textStyle: { // Used for modal buttons (could be merged with buttonText for consistency)
+    buttonConfirmUpdate: {
+        backgroundColor: '#4ADE80',
+    },
+    textStyle: {
         color: 'white',
         fontWeight: 'bold',
         textAlign: 'center',
