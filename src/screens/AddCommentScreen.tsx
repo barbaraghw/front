@@ -18,9 +18,11 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
 
 type AddCommentScreenProps = NativeStackScreenProps<RootStackParamList, 'AddComment'>;
+
+const MAX_COMMENT_LENGTH = 300;
 
 const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }) => {
     const { movieId, movieTitle, movieYear, posterPath, commentId, initialText, initialRating } = route.params;
@@ -140,8 +142,20 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
     return <View style={styles.starsContainer}>{stars}</View>;
 };
 
+const handleCommentTextChange = (text: string) => {
+        if (text.length <= MAX_COMMENT_LENGTH) {
+            setCommentText(text);
+        } else {
+            // Corta el texto si excede el límite
+            setCommentText(text.substring(0, MAX_COMMENT_LENGTH));
+            Alert.alert(
+                'Límite de caracteres excedido',
+                `Tu comentario no puede superar los ${MAX_COMMENT_LENGTH} caracteres.`,
+                [{ text: 'OK' }]
+            );
+        }
+    };
 
-    // --- FIN DE MODIFICACIONES PARA MEDIAS ESTRELLAS ---
 
     const handleSubmitComment = async () => {
         if (!commentText.trim()) {
@@ -152,6 +166,15 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
         if (rating === 0 || rating < 0.5 || rating > 5 || isNaN(rating)) {
             Alert.alert('Error', 'Por favor, selecciona una puntuación válida entre 0.5 y 5 estrellas.');
             return;
+        }
+
+        if (commentText.length > MAX_COMMENT_LENGTH) {
+            Alert.alert(
+                'Error de longitud',
+                `El comentario excede el máximo de ${MAX_COMMENT_LENGTH} caracteres. Por favor, acórtalo.`,
+                [{ text: 'OK' }]
+            );
+            return; // Detiene el envío si el texto aún es demasiado largo
         }
 
         setLoading(true);
@@ -255,7 +278,11 @@ const AddCommentScreen: React.FC<AddCommentScreenProps> = ({ route, navigation }
                         onChangeText={setCommentText}
                         textAlignVertical="top"
                         editable={!loading}
+                        maxLength={MAX_COMMENT_LENGTH}
                     />
+                    <Text style={styles.charCount}>
+                        {commentText.length}/{MAX_COMMENT_LENGTH}
+                    </Text>
                 </View>
             </View>
         </SafeAreaView>
@@ -350,6 +377,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#333',
         flex: 1,
+    },
+    charCount: {
+        color: '#A0A0A0',
+        textAlign: 'right',
+        marginTop: 5, // Espacio entre el input y el contador
+        fontSize: 12,
     },
 });
 

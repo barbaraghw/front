@@ -18,12 +18,15 @@ import { LoginResponse, ErrorResponse } from '../types/api';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
 
 const LoginScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+const MAX_LENGTH_PASSWORD = 30;
+const MAX_LENGTH_EMAIL = 50;
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -80,7 +83,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
     <View style={styles.container}>
       {/* Logo de la aplicación */}
       <Image
-        source={require('../../assets/logo.png')}
+        source={require('../../assets/l.jpg')}
         style={styles.logo}
       />
       <Text style={styles.title}>Login to your Account</Text>
@@ -93,6 +96,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
+        maxLength={MAX_LENGTH_EMAIL} 
       />
       <TextInput
         style={styles.input}
@@ -101,6 +105,7 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
         secureTextEntry
         value={password}
         onChangeText={setPassword}
+        maxLength={MAX_LENGTH_PASSWORD} 
       />
       <TouchableOpacity style={styles.primaryButton} onPress={handleLogin}>
         {loading ? (

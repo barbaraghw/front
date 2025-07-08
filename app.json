@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "front",
-    "slug": "front",
+    "name": "Movies",
+    "slug": "cine",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/palomitas-de-maiz.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -17,13 +17,20 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/palomitas-de-maiz.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.barbaraghw.cine"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3eaede17-0bd6-4671-95b7-640d2b142a7e"
+      }
+    },
+    "owner": "barbaraghw"
   }
 }

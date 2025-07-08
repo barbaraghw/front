@@ -4,7 +4,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { ActivityIndicator, View, Text, Platform } from 'react-native';
+import { ActivityIndicator, View, Text, Platform, SafeAreaView } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import * as SystemUI from 'expo-system-ui';
@@ -135,6 +135,7 @@ const App = () => {
 
 
     return (
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#0A0A0A' }}>
         <NavigationContainer>
             <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Login" component={LoginScreen} />
@@ -157,6 +158,7 @@ const App = () => {
                 <Stack.Screen name="AddComment" component={AddCommentScreen} />
             </Stack.Navigator>
         </NavigationContainer>
+        </SafeAreaView>
     );
 };
 

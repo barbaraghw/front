@@ -53,11 +53,11 @@ type MovieListStackProps = NativeStackScreenProps<RootStackParamList, 'MovieList
 
 type MovieListScreenProps = MovieListTabProps | MovieListStackProps;
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
 const windowWidth = Dimensions.get('window').width;
 const numColumns = 2;
-const cardMargin = 15;
-const cardWidth = (windowWidth - (numColumns + 1) * cardMargin) / numColumns;
+const cardMargin = 10;
+const cardWidth = 150;
 const verticalCardMargin = 10;
 const MovieListScreen: React.FC<MovieListScreenProps> = ({ navigation, route }) => {
     const rootStackNavigation = navigation as NativeStackNavigationProp<RootStackParamList>;
@@ -822,7 +822,7 @@ const styles = StyleSheet.create({
         flex: 1, // Allows title to take available space
     },
     flatListContent: {
-        paddingHorizontal: cardMargin / 2, // Half margin for vertical list to ensure even spacing
+        paddingHorizontal: cardMargin,
     },
     categoryFilterContainer: {
         marginBottom: 20,

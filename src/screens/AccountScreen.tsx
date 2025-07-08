@@ -9,7 +9,8 @@ import {
     ActivityIndicator,
     Modal,
     Pressable,
-    SafeAreaView
+    SafeAreaView, 
+    ScrollView
 } from 'react-native';
 
 import { CompositeScreenProps } from '@react-navigation/native';
@@ -33,7 +34,7 @@ type Props = CompositeScreenProps<
     NativeStackScreenProps<RootStackParamList>
 >;
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
 
 const AccountScreen: React.FC<Props> = ({ navigation }) => {
     const [user, setUser] = useState<UserProfile | null>(null);
@@ -229,7 +230,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                 <Text style={styles.title}>Gestionar Cuenta</Text>
             </View>
 
-
+<ScrollView contentContainerStyle={styles.scrollViewContent}> 
             {user && (
                 <View style={styles.profileSection}>
                     <Text style={styles.label}>Email actual:</Text>
@@ -287,6 +288,7 @@ const AccountScreen: React.FC<Props> = ({ navigation }) => {
                     </TouchableOpacity>
                 </View>
             )}
+            </ScrollView>
 
             {/* Modal para Confirmar Eliminación de Cuenta */}
             <Modal
@@ -401,6 +403,10 @@ const styles = StyleSheet.create({
         marginTop: 20,
         fontSize: 18,
         color: '#fff',
+    },
+    scrollViewContent: {
+        flexGrow: 1, // Esto es crucial para que el contenido dentro del ScrollView pueda expandirse y permitir el desplazamiento.
+        paddingBottom: 20, // Espacio extra al final para que el último contenido no quede pegado al borde inferior
     },
     profileSection: {
         width: '100%',

@@ -24,7 +24,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
 const CRITIC_SECRET_KEY = "VALIDOESCRITICO"; // La clave hardcodeada
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
+const MIN_LENGTH_PASSWORD = 3;
+const MIN_LENGTH_USERNAME = 3;
+const MAX_LENGTH_USERNAME = 30;
+const MIN_LENGTH_EMAIL = 5;
+const MAX_LENGTH_EMAIL = 50;
 
 const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -38,6 +43,19 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [isCritic, setIsCritic] = useState(false);
   const [showCriticModal, setShowCriticModal] = useState(false);
   const [criticKeyInput, setCriticKeyInput] = useState('');
+
+    const handleTextChange = (setter: React.Dispatch<React.SetStateAction<string>>, currentText: string, newText: string, maxLength: number, fieldName: string) => {
+        if (newText.length > maxLength) {
+            // Solo mostrar la alerta si el texto actual es igual al máximo y se intenta escribir más
+            if (currentText.length === maxLength) {
+                Alert.alert('Límite de Caracteres', `El campo "${fieldName}" no puede exceder los ${maxLength} caracteres.`);
+            }
+            // `maxLength` en TextInput ya previene la entrada, esto es solo para la alerta
+            setter(newText.substring(0, maxLength)); // Asegurarse de que no se almacene más del máximo
+        } else {
+            setter(newText);
+        }
+    };
 
    const handleRegister = async (registerAsCritic: boolean) => {
     // Restablecer error antes de cada intento de registro
@@ -61,7 +79,29 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       setLoading(false);
       return;
     }
+     if (username.trim().length < MIN_LENGTH_USERNAME || username.trim().length > MAX_LENGTH_USERNAME) {
+            Alert.alert('Error', `El nombre de usuario debe tener entre ${MIN_LENGTH_USERNAME} y ${MAX_LENGTH_USERNAME} caracteres.`);
+            setLoading(false);
+            return;
+        }
 
+        const emailRegex = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/;
+        if (!emailRegex.test(email)) {
+            Alert.alert('Error', 'Por favor, introduce un formato de email válido.');
+            setLoading(false);
+            return;
+        }
+        if (email.length < MIN_LENGTH_EMAIL || email.length > MAX_LENGTH_EMAIL) {
+            Alert.alert('Error', `El email debe tener entre ${MIN_LENGTH_EMAIL} y ${MAX_LENGTH_EMAIL} caracteres.`);
+            setLoading(false);
+            return;
+        }
+
+         console.log('Intentando registrar con los siguientes datos:');
+        console.log('Email:', email);
+        console.log('Username:', username);
+        console.log('Password (length):', password.length); // No imprimir la contraseña en texto plano por seguridad
+        console.log('Is Critic:', isCritic);
     try {
       // INCLUIR EL CAMPO isCritic EN EL PAYLOAD
       const response = await axios.post<RegisterResponse>(`${API_URL}/auth/register`, {
@@ -74,14 +114,50 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       Alert.alert('Éxito', response.data.message);
       navigation.goBack();
     } catch (error) {
-      const axiosError = error as AxiosError<ErrorResponse>;
-      const errorMessage = axiosError.response?.data?.message || 'Error al registrar.';
-      Alert.alert('Error', errorMessage);
-      setError(errorMessage); // Mostrar el error en pantalla si lo deseas
-    } finally {
-      setLoading(false);
-    }
-  };
+            const axiosError = error as AxiosError<ErrorResponse>;
+            console.error('Error en la petición de registro (Axios error):', axiosError); // Log del objeto de error completo
+            console.error('Respuesta de error del backend:', axiosError.response?.data); // Log de los datos de error del backend
+            console.error('Código de estado HTTP:', axiosError.response?.status); // Log del código de estado
+
+            const backendMessage = axiosError.response?.data?.message;
+            let errorMessage = 'Error al registrar.'; // Mensaje por defecto
+
+            if (backendMessage) {
+                if (backendMessage.includes('email ya están registrados')) {
+                    errorMessage = 'El email o nombre de usuario ya están registrados.';
+                } else if (backendMessage.includes('email es requerido')) {
+                    errorMessage = 'El email es un campo obligatorio.';
+                } else if (backendMessage.includes('contraseña es requerida')) {
+                    errorMessage = 'La contraseña es un campo obligatorio.';
+                } else if (backendMessage.includes('nombre de usuario es requerido')) {
+                    errorMessage = 'El nombre de usuario es un campo obligatorio.';
+                } else if (backendMessage.includes('email debe tener al menos')) {
+                    errorMessage = `El email debe tener al menos ${MIN_LENGTH_EMAIL} caracteres.`;
+                } else if (backendMessage.includes('email no puede exceder')) {
+                    errorMessage = `El email no puede exceder los ${MAX_LENGTH_EMAIL} caracteres.`;
+                } else if (backendMessage.includes('contraseña debe tener al menos')) {
+                    errorMessage = `La contraseña debe tener al menos ${MIN_LENGTH_PASSWORD} caracteres.`;
+                }  else if (backendMessage.includes('nombre de usuario debe tener al menos')) {
+                    errorMessage = `El nombre de usuario debe tener al menos ${MIN_LENGTH_USERNAME} caracteres.`;
+                } else if (backendMessage.includes('nombre de usuario no puede exceder')) {
+                    errorMessage = `El nombre de usuario no puede exceder los ${MAX_LENGTH_USERNAME} caracteres.`;
+                } else {
+                    errorMessage = backendMessage;
+                }
+            } else if (axiosError.request) {
+                errorMessage = 'No se recibió respuesta del servidor. Verifica tu conexión o la URL de la API.';
+                console.error('No se recibió respuesta:', axiosError.request);
+            } else {
+                errorMessage = 'Error al configurar la petición: ' + axiosError.message;
+                console.error('Error de configuración de Axios:', axiosError.message);
+            }
+            
+            Alert.alert('Error', errorMessage);
+            setError(errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
 
   // NUEVA FUNCIÓN para validar la clave de crítico
   const handleValidateCriticKey = () => {
@@ -118,12 +194,12 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
       {/* Logo de la aplicación */}
       <Image
-        source={require('../../assets/logo.png')} // Ensure this path is correct for your logo
+        source={require('../../assets/l.jpg')} // Ensure this path is correct for your logo
         style={styles.logo}
       />
       <Text style={styles.title}>Create your Account</Text>
 
-      {error ? <Text style={styles.generalErrorText}>{error}</Text> : null} {/* Mostrar error general */}
+      {error ? <Text style={styles.generalErrorText}>{error}</Text> : null}
 
       <TextInput
         style={styles.input}
@@ -133,8 +209,8 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         autoCapitalize="none"
         value={email}
         onChangeText={setEmail}
+        maxLength={MAX_LENGTH_EMAIL} // **** APLICAR MAXLENGTH ****
       />
-      {/* <--- NEW USERNAME INPUT FIELD --- */}
       <TextInput
         style={styles.input}
         placeholder="Nombre de Usuario"
@@ -142,15 +218,15 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         autoCapitalize="none" // Usernames are often case-sensitive on backend, keep as is
         value={username}
         onChangeText={setUsername}
+        maxLength={MAX_LENGTH_USERNAME} // **** APLICAR MAXLENGTH ****
       />
-      {/* <--- END NEW USERNAME INPUT FIELD --- */}
       <TextInput
         style={styles.input}
         placeholder="Password"
         placeholderTextColor="#888"
         secureTextEntry
         value={password}
-        onChangeText={setPassword}
+        onChangeText={setPassword}// **** APLICAR MAXLENGTH ****
       />
       <TextInput
         style={styles.input}
@@ -158,10 +234,9 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         placeholderTextColor="#888"
         secureTextEntry
         value={confirmPassword}
-        onChangeText={setConfirmPassword}
+        onChangeText={setConfirmPassword}// **** APLICAR MAXLENGTH ****
       />
 
-      {/* NUEVA SECCIÓN: Checkbox/Switch para usuario crítico */}
       <View style={styles.criticOptionContainer}>
         <Text style={styles.criticOptionText}>Register as Critic User?</Text>
         <Switch
@@ -180,15 +255,11 @@ const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         />
       </View>
 
-      {/* Botón Principal de Registrarse */}
       <TouchableOpacity style={styles.primaryButton} onPress={onMainSignUpPress} disabled={loading}>
         {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Sign Up</Text>}
       </TouchableOpacity>
 
 
-      {/* Ya no hay separador ni botones sociales aquí */}
-
-      {/* MODAL para la validación de crítico */}
       <Modal
         animationType="slide"
         transparent={true}

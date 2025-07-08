@@ -35,7 +35,7 @@ interface Movie {
 
 type SearchScreenProps = NativeStackScreenProps<RootStackParamList, 'SearchScreen'>;
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http:/https://back-azq9.onrender.com/api';
 
 const SearchScreen: React.FC<SearchScreenProps> = ({ navigation }) => {
     const [searchQuery, setSearchQuery] = useState('');

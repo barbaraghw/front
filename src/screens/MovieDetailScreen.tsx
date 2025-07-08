@@ -53,7 +53,7 @@ interface DecodedToken {
 
 type MovieDetailScreenProps = NativeStackScreenProps<RootStackParamList, 'MovieDetail'>;
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.100:5000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://back-azq9.onrender.com/api';
 
 const MovieDetailScreen: React.FC<MovieDetailScreenProps> = ({ route, navigation }) => {
     const { movieId, movieTitle } = route.params;
